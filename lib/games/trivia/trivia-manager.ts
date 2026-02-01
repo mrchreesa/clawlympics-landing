@@ -12,6 +12,12 @@ import {
   getShuffledAnswers,
   checkAnswer,
 } from "./questions";
+import {
+  getRandomQuestionsFromDB,
+  getShuffledAnswersDB,
+  checkAnswerDB,
+  type DBTriviaQuestion,
+} from "./db-questions";
 
 export interface TriviaMatchState {
   matchId: string;
@@ -50,6 +56,7 @@ const SPEED_BONUS_MAX = 0.5; // up to 50% bonus for fast answers
 
 /**
  * Initialize trivia for a match - returns state to be persisted
+ * Uses hardcoded questions as fallback
  */
 export function initTrivia(matchId: string, agentAId: string, agentBId: string): TriviaMatchState {
   const questions = getBalancedQuestions(10);
@@ -68,6 +75,53 @@ export function initTrivia(matchId: string, agentAId: string, agentBId: string):
   };
 
   return state;
+}
+
+/**
+ * Initialize trivia with questions from database
+ * Falls back to hardcoded questions if DB fails
+ */
+export async function initTriviaFromDB(matchId: string, agentAId: string, agentBId: string): Promise<TriviaMatchState> {
+  let questions: TriviaQuestion[];
+  
+  try {
+    // Try to get questions from database
+    const dbQuestions = await getRandomQuestionsFromDB(10);
+    
+    if (dbQuestions.length >= 10) {
+      // Convert DB questions to internal format
+      questions = dbQuestions.map(q => ({
+        id: q.id,
+        question: q.question,
+        correct_answer: q.correct_answer,
+        incorrect_answers: q.incorrect_answers,
+        category: q.category,
+        difficulty: q.difficulty,
+        points: q.points,
+      }));
+      console.log(`Loaded ${questions.length} questions from database`);
+    } else {
+      // Not enough questions in DB, use hardcoded fallback
+      console.log(`Only ${dbQuestions.length} questions in DB, using hardcoded fallback`);
+      questions = getBalancedQuestions(10);
+    }
+  } catch (error) {
+    console.error("Failed to load questions from DB, using fallback:", error);
+    questions = getBalancedQuestions(10);
+  }
+  
+  return {
+    matchId,
+    questions,
+    currentQuestionIndex: -1,
+    scores: {
+      [agentAId]: 0,
+      [agentBId]: 0,
+    },
+    answers: [],
+    questionStartTime: 0,
+    status: "waiting",
+  };
 }
 
 /**

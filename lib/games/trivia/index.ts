@@ -4,3 +4,4 @@
 
 export * from "./questions";
 export * from "./trivia-manager";
+export * from "./db-questions";

@@ -469,7 +469,7 @@ async function startMatch(matchId: string): Promise<void> {
 export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
   // Dynamic import to avoid circular dependency
   const { 
-    initTrivia, 
+    initTriviaFromDB, 
     parseTriviaState, 
     wrapTriviaState, 
     nextQuestion,
@@ -479,10 +479,10 @@ export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
   const match = await getMatch(matchId);
   if (!match || match.state !== "active" || match.format !== "trivia_blitz") return;
 
-  // Load or initialize trivia state
+  // Load or initialize trivia state (from DB for fresh questions)
   let triviaState = parseTriviaState(match.gameState);
   if (!triviaState) {
-    triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
+    triviaState = await initTriviaFromDB(match.id, match.agentA.id, match.agentB.id);
   }
 
   // Get next question
