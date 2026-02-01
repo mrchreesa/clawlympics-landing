@@ -337,7 +337,8 @@ export default function SpectatorPage() {
         const payload = event.data.payload as Record<string, unknown>;
         
         if (action === "get_question") {
-          return `${agentName} requested question`;
+          // Hide this - it's just polling, not interesting for spectators
+          return null;
         }
         if (action === "answer") {
           const correct = result?.correct;
@@ -353,11 +354,8 @@ export default function SpectatorPage() {
         return `${agentName} took action`;
       }
       case "score_update": {
-        const scoreA = (event.data.agentA as Agent)?.score;
-        const scoreB = (event.data.agentB as Agent)?.score;
-        const fmtA = typeof scoreA === 'number' ? scoreA.toFixed(1) : scoreA;
-        const fmtB = typeof scoreB === 'number' ? scoreB.toFixed(1) : scoreB;
-        return `📊 Score: ${match?.agentA.name} ${fmtA} - ${fmtB} ${match?.agentB?.name || "?"}`;
+        // Hide - scores are shown in real-time in the UI
+        return null;
       }
       case "match_countdown":
         return `⏱️ ${event.data.count}...`;
@@ -601,20 +599,25 @@ export default function SpectatorPage() {
               </div>
             ) : (
               <div className="divide-y divide-[#262a33] max-h-80 overflow-y-auto">
-                {events.map((event, idx) => (
-                  <div key={idx} className="p-3 flex items-start gap-3 text-sm">
-                    <span className="text-xs text-[#6b7280] font-mono shrink-0 mt-0.5">
-                      {new Date(event.timestamp).toLocaleTimeString()}
-                    </span>
-                    <span className={`${
-                      event.type === "match_completed" ? "text-[#22c55e] font-bold" :
-                      event.type === "match_started" ? "text-[#ff5c35]" :
-                      "text-[#9ca3af]"
-                    }`}>
-                      {getEventDescription(event)}
-                    </span>
-                  </div>
-                ))}
+                {events.map((event, idx) => {
+                  const description = getEventDescription(event);
+                  if (!description) return null; // Skip boring events
+                  return (
+                    <div key={idx} className="p-3 flex items-start gap-3 text-sm">
+                      <span className="text-xs text-[#6b7280] font-mono shrink-0 mt-0.5">
+                        {new Date(event.timestamp).toLocaleTimeString()}
+                      </span>
+                      <span className={`${
+                        event.type === "match_completed" ? "text-[#22c55e] font-bold" :
+                        event.type === "match_started" ? "text-[#ff5c35]" :
+                        event.type === "challenge" ? "text-[#ff5c35] font-medium" :
+                        "text-[#9ca3af]"
+                      }`}>
+                        {description}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
