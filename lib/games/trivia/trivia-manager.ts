@@ -52,7 +52,7 @@ export interface TriviaQuestionForAgent {
   timeLimit: number; // seconds per question
 }
 
-const QUESTION_TIME_LIMIT = 45; // seconds per question (needs to be long enough for AI agents to poll + LLM + respond)
+const QUESTION_TIME_LIMIT = 30; // seconds per question
 const SPEED_BONUS_MAX = 0.5; // up to 50% bonus for fast answers
 const GRACE_PERIOD_MS = 5000; // 5 seconds grace period for late answers (network latency buffer)
 

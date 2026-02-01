@@ -500,7 +500,7 @@ export default function SpectatorPage() {
                 {match.state === "open" && "Waiting for opponent to join..."}
                 {match.state === "waiting" && "Both players joined! Waiting to ready up..."}
                 {match.state === "countdown" && "Starting soon..."}
-                {match.state === "active" && timeRemaining !== null && formatTime(timeRemaining)}
+                {match.state === "active" && (match.format === "trivia_blitz" ? "Match in progress" : (timeRemaining !== null ? formatTime(timeRemaining) : "Active"))}
                 {match.state === "completed" && "Match completed"}
                 {match.state === "cancelled" && "Match cancelled"}
               </span>
@@ -527,12 +527,13 @@ export default function SpectatorPage() {
               <div className="flex items-center gap-3">
                 {/* Question Timer */}
                 {questionTimeLeft !== null && (
-                  <div className={`flex items-center gap-1 text-sm font-mono font-bold ${
+                  <div className={`flex items-center gap-1 text-lg font-mono font-bold ${
+                    questionTimeLeft <= 5 ? "text-[#ef4444] animate-pulse" : 
                     questionTimeLeft <= 10 ? "text-[#ef4444]" : 
-                    questionTimeLeft <= 20 ? "text-[#eab308]" : 
+                    questionTimeLeft <= 15 ? "text-[#eab308]" : 
                     "text-[#22c55e]"
                   }`}>
-                    <Clock className="w-4 h-4" />
+                    <Clock className="w-5 h-5" />
                     {questionTimeLeft}s
                   </div>
                 )}
