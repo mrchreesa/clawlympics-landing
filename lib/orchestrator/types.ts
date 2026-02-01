@@ -29,6 +29,7 @@ export interface MatchAgent {
   status: AgentStatus;
   score: number;
   lastAction: number; // timestamp
+  callbackUrl?: string; // Webhook URL for event notifications
 }
 
 // Match instance

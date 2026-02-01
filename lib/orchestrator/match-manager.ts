@@ -174,7 +174,8 @@ export async function createOpenMatch(
 export async function joinOpenMatch(
   matchId: string,
   joinerId: string,
-  joinerName: string
+  joinerName: string,
+  callbackUrl?: string
 ): Promise<Match | null> {
   const supabase = getSupabaseAdmin();
   
@@ -197,14 +198,21 @@ export async function joinOpenMatch(
     throw new Error("You created this match - wait for an opponent");
   }
 
+  const updateData: Record<string, unknown> = {
+    agent_b_id: joinerId,
+    agent_b_name: joinerName,
+    agent_b_status: "connected",
+    state: "waiting", // Now waiting for both to ready up
+  };
+  
+  // Store callback URL if provided
+  if (callbackUrl) {
+    updateData.agent_b_callback_url = callbackUrl;
+  }
+
   const { data, error } = await supabase
     .from("live_matches")
-    .update({
-      agent_b_id: joinerId,
-      agent_b_name: joinerName,
-      agent_b_status: "connected",
-      state: "waiting", // Now waiting for both to ready up
-    })
+    .update(updateData)
     .eq("id", matchId)
     .eq("state", "open") // Ensure still open (prevent race)
     .select()
@@ -383,6 +391,56 @@ export async function setAgentReady(matchId: string, agentId: string): Promise<M
 }
 
 /**
+ * Set callback URL for an agent in a match
+ */
+export async function setAgentCallback(
+  matchId: string,
+  agentId: string,
+  callbackUrl: string
+): Promise<boolean> {
+  const match = await getMatch(matchId);
+  if (!match) return false;
+
+  const isAgentA = match.agentA.id === agentId;
+  const isAgentB = match.agentB.id === agentId;
+  if (!isAgentA && !isAgentB) return false;
+
+  const supabase = getSupabaseAdmin();
+  const column = isAgentA ? "agent_a_callback_url" : "agent_b_callback_url";
+  
+  const { error } = await supabase
+    .from("live_matches")
+    .update({ [column]: callbackUrl })
+    .eq("id", matchId);
+
+  return !error;
+}
+
+/**
+ * Get callback URLs for both agents in a match
+ */
+export async function getMatchCallbacks(matchId: string): Promise<{
+  agentACallback?: string;
+  agentBCallback?: string;
+}> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("live_matches")
+    .select("agent_a_callback_url, agent_b_callback_url")
+    .eq("id", matchId)
+    .single();
+
+  if (error || !data) {
+    return {};
+  }
+
+  return {
+    agentACallback: data.agent_a_callback_url || undefined,
+    agentBCallback: data.agent_b_callback_url || undefined,
+  };
+}
+
+/**
  * Emit an event only to local subscribers (no DB write)
  * Use for high-frequency events like countdown
  */
@@ -434,9 +492,9 @@ async function startMatch(matchId: string): Promise<void> {
     started_at: new Date().toISOString(),
   });
 
-  await emitEvent(matchId, {
+  const startEvent = {
     id: randomUUID(),
-    type: "match_started",
+    type: "match_started" as const,
     timestamp: Date.now(),
     data: {
       format: match.format,
@@ -445,7 +503,13 @@ async function startMatch(matchId: string): Promise<void> {
       agentB: { id: match.agentB.id, name: match.agentB.name },
       message: "Match started! Listen for 'challenge' events or call get_question.",
     },
-  });
+  };
+  await emitEvent(matchId, startEvent);
+
+  // Notify agents via webhook
+  const { notifyMatchAgents } = await import("./webhooks");
+  const callbacks = await getMatchCallbacks(matchId);
+  notifyMatchAgents(match, startEvent, callbacks.agentACallback, callbacks.agentBCallback);
 
   // For trivia matches, push the first question immediately
   if (match.format === "trivia_blitz") {
@@ -504,15 +568,24 @@ export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
   }
 
   // Push question to all listeners via SSE
-  await emitEvent(matchId, {
+  const challengeEvent = {
     id: randomUUID(),
-    type: "challenge",
+    type: "challenge" as const,
     timestamp: Date.now(),
     data: {
       question,
       message: `Question ${question.questionNumber}/${question.totalQuestions}: Answer within ${question.timeLimit} seconds!`,
     },
-  });
+  };
+  await emitEvent(matchId, challengeEvent);
+
+  // Notify agents via webhook (if registered)
+  const { notifyMatchAgents } = await import("./webhooks");
+  const callbacks = await getMatchCallbacks(matchId);
+  const freshMatch = await getMatch(matchId);
+  if (freshMatch) {
+    notifyMatchAgents(freshMatch, challengeEvent, callbacks.agentACallback, callbacks.agentBCallback);
+  }
 
   // Set question timeout
   setTimeout(async () => {

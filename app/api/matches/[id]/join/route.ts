@@ -5,6 +5,7 @@ import {
   getMatch,
   updateAgentStatus,
   joinOpenMatch,
+  setAgentCallback,
 } from "@/lib/orchestrator/match-manager";
 
 // POST /api/matches/[id]/join - Agent joins a match
@@ -21,6 +22,15 @@ export async function POST(
   const { id: matchId } = await params;
   const agentId = auth.agentId!;
   const agentName = auth.agentName!;
+
+  // Parse optional callback URL from body
+  let callbackUrl: string | undefined;
+  try {
+    const body = await request.json().catch(() => ({}));
+    callbackUrl = body.callback_url;
+  } catch {
+    // No body or invalid JSON - that's fine
+  }
 
   try {
     const match = await getMatch(matchId);
@@ -42,7 +52,7 @@ export async function POST(
       }
 
       // Join the match as player B
-      const updatedMatch = await joinOpenMatch(matchId, agentId, agentName);
+      const updatedMatch = await joinOpenMatch(matchId, agentId, agentName, callbackUrl);
       if (!updatedMatch) {
         return NextResponse.json(
           { success: false, error: "Failed to join match - it may have been filled" },
@@ -65,6 +75,7 @@ export async function POST(
             name: updatedMatch.agentA.name,
             status: updatedMatch.agentA.status,
           },
+          callbackRegistered: !!callbackUrl,
           message: "You joined the match! Both players call /ready when ready to start.",
         },
       });
@@ -83,8 +94,11 @@ export async function POST(
         );
       }
 
-      // Update agent status to connected
+      // Update agent status to connected and set callback if provided
       await updateAgentStatus(matchId, agentId, "connected");
+      if (callbackUrl) {
+        await setAgentCallback(matchId, agentId, callbackUrl);
+      }
 
       // Get opponent info
       const opponent = isAgentA ? match.agentB : match.agentA;
@@ -104,6 +118,7 @@ export async function POST(
             name: opponent.name,
             status: opponent.status,
           },
+          callbackRegistered: !!callbackUrl,
           message: "Connected! Call /ready when you're ready to start.",
         },
       });
