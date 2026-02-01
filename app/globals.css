@@ -1,107 +1,56 @@
 @import "tailwindcss";
 
 :root {
-  --background: #050505;
+  --background: #0f1115;
   --foreground: #ffffff;
-  --accent: #ff4500;
-  --accent-secondary: #06b6d4;
-  --card: #0d0d0d;
-  --card-border: #1a1a1a;
-  --card-hover: #252525;
+  --accent: #ff5c35;
+  --accent-secondary: #3b82f6;
+  --card: #181b20;
+  --card-border: #262a33;
+  --muted: #6b7280;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
-/* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }
 
-/* Selection */
 ::selection {
-  background: rgba(255, 69, 0, 0.4);
+  background: rgba(255, 92, 53, 0.3);
   color: white;
 }
 
-/* Custom scrollbar */
+/* Subtle scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 4px;
+  background: #333;
+  border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #ff4500;
+/* Hazard stripes pattern */
+.hazard-stripes {
+  background: repeating-linear-gradient(
+    -45deg,
+    #ff5c35 0,
+    #ff5c35 10px,
+    #0f1115 10px,
+    #0f1115 20px
+  );
 }
 
-/* Animations */
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-@keyframes scan-line {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient-shift 8s ease infinite;
-}
-
-/* Glowing text effect */
-.glow-text {
-  text-shadow: 0 0 20px rgba(255, 69, 0, 0.5),
-               0 0 40px rgba(255, 69, 0, 0.3),
-               0 0 60px rgba(255, 69, 0, 0.1);
-}
-
-/* Card glow on hover */
-.card-glow:hover {
-  box-shadow: 0 0 30px rgba(255, 69, 0, 0.15),
-              0 0 60px rgba(255, 69, 0, 0.05);
-}
-
-/* Grid pattern background */
-.grid-pattern {
-  background-image: 
-    linear-gradient(rgba(255, 69, 0, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 69, 0, 0.03) 1px, transparent 1px);
-  background-size: 50px 50px;
-}
-
-/* Noise overlay */
-.noise-overlay {
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+/* Terminal style */
+.terminal {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CheckCircle, Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, ArrowRight } from "lucide-react";
 
 export function WaitlistForm() {
   const [email, setEmail] = useState("");
@@ -17,72 +17,56 @@ export function WaitlistForm() {
 
     try {
       // TODO: Connect to Supabase
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       
       console.log("Waitlist signup:", email);
       setStatus("success");
       setEmail("");
     } catch {
       setStatus("error");
-      setErrorMessage("Something went wrong. Please try again.");
+      setErrorMessage("Something went wrong. Try again.");
     }
   };
 
   if (status === "success") {
     return (
-      <div className="relative">
-        <div className="absolute -inset-1 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl blur-sm opacity-30" />
-        <div className="relative flex items-center justify-center gap-3 py-4 px-6 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400">
-          <CheckCircle className="w-5 h-5" />
-          <span className="font-medium">You&apos;re in! We&apos;ll notify you when the arena opens.</span>
-        </div>
+      <div className="flex items-center gap-2 py-3 px-4 rounded-lg bg-[#22c55e]/10 border border-[#22c55e]/30 text-[#22c55e] text-sm">
+        <Check className="w-4 h-4" />
+        <span>You&apos;re on the list. We&apos;ll be in touch.</span>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="relative">
-        {/* Glow effect */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl blur-sm opacity-20 group-hover:opacity-30 transition-opacity" />
-        
-        <div className="relative flex flex-col sm:flex-row gap-3">
-          <Input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            required
-            disabled={status === "loading"}
-            className="h-14 px-5 bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder:text-gray-500 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 rounded-xl text-base"
-          />
-          <Button
-            type="submit"
-            disabled={status === "loading"}
-            className="h-14 px-8 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-bold rounded-xl text-base shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all"
-          >
-            {status === "loading" ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Joining...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5 mr-2" />
-                Join Waitlist
-              </>
-            )}
-          </Button>
-        </div>
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="your@email.com"
+          required
+          disabled={status === "loading"}
+          className="h-11 px-4 bg-[#181b20] border-[#262a33] text-white placeholder:text-[#6b7280] focus:border-[#ff5c35] focus:ring-1 focus:ring-[#ff5c35]/20 rounded-lg"
+        />
+        <Button
+          type="submit"
+          disabled={status === "loading"}
+          className="h-11 px-5 bg-[#ff5c35] hover:bg-[#ff5c35]/90 text-white font-medium rounded-lg"
+        >
+          {status === "loading" ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <>
+              Join <ArrowRight className="w-4 h-4 ml-1" />
+            </>
+          )}
+        </Button>
       </div>
       
       {status === "error" && (
-        <p className="text-red-400 text-sm text-center">{errorMessage}</p>
+        <p className="text-red-400 text-xs">{errorMessage}</p>
       )}
-      
-      <p className="text-xs text-gray-600 text-center">
-        No spam. Unsubscribe anytime. We&apos;ll only email you about the arena.
-      </p>
     </form>
   );
 }
