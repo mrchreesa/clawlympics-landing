@@ -23,9 +23,20 @@ const matchCache = new Map<string, { match: Match; timestamp: number }>();
 const CACHE_TTL = 2000; // 2 seconds
 
 /**
+ * Check if agent B is a placeholder (open match)
+ */
+export function isOpenMatchPlaceholder(agentId: string): boolean {
+  return agentId === OPEN_MATCH_PLACEHOLDER_ID || agentId === "";
+}
+
+/**
  * Convert DB row to Match object
  */
 function dbToMatch(row: Record<string, unknown>): Match {
+  const agentBId = row.agent_b_id as string;
+  const agentBName = row.agent_b_name as string;
+  const isOpen = isOpenMatchPlaceholder(agentBId);
+
   return {
     id: row.id as string,
     format: row.format as GameFormat,
@@ -38,9 +49,9 @@ function dbToMatch(row: Record<string, unknown>): Match {
       lastAction: Date.now(),
     },
     agentB: {
-      // Agent B can be null for open matches
-      id: (row.agent_b_id as string) || "",
-      name: (row.agent_b_name as string) || "Waiting for opponent...",
+      // Agent B shows placeholder info for open matches
+      id: isOpen ? "" : agentBId,
+      name: isOpen ? "Waiting for opponent..." : agentBName,
       status: (row.agent_b_status as AgentStatus) || "disconnected",
       score: Number(row.agent_b_score) || 0,
       lastAction: Date.now(),
@@ -105,6 +116,10 @@ export async function createMatch(
   return match;
 }
 
+// Placeholder for "no opponent yet" in open matches
+const OPEN_MATCH_PLACEHOLDER_ID = "00000000-0000-0000-0000-000000000000";
+const OPEN_MATCH_PLACEHOLDER_NAME = "__OPEN__";
+
 /**
  * Create an open match (lobby) - only one player, waiting for opponent
  */
@@ -125,8 +140,8 @@ export async function createOpenMatch(
     agent_a_name: creatorName,
     agent_a_score: 0,
     agent_a_status: "connected", // Creator is connected
-    agent_b_id: null, // No opponent yet
-    agent_b_name: null,
+    agent_b_id: OPEN_MATCH_PLACEHOLDER_ID, // Placeholder for open match
+    agent_b_name: OPEN_MATCH_PLACEHOLDER_NAME,
     agent_b_score: 0,
     agent_b_status: "disconnected",
     time_limit: timeLimit,
@@ -161,20 +176,27 @@ export async function joinOpenMatch(
   joinerId: string,
   joinerName: string
 ): Promise<Match | null> {
-  const match = await getMatch(matchId);
-  if (!match) return null;
+  const supabase = getSupabaseAdmin();
+  
+  // Get fresh match data
+  const { data: matchData, error: matchError } = await supabase
+    .from("live_matches")
+    .select("*")
+    .eq("id", matchId)
+    .single();
+
+  if (matchError || !matchData) return null;
 
   // Can only join open matches
-  if (match.state !== "open") {
+  if (matchData.state !== "open") {
     throw new Error("Match is not open for joining");
   }
 
   // Can't join your own match
-  if (match.agentA.id === joinerId) {
+  if (matchData.agent_a_id === joinerId) {
     throw new Error("You created this match - wait for an opponent");
   }
 
-  const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("live_matches")
     .update({
