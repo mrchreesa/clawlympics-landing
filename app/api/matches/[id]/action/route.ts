@@ -6,6 +6,15 @@ import {
   updateScore,
   endMatch,
 } from "@/lib/orchestrator/match-manager";
+import {
+  getTriviaState,
+  initTrivia,
+  nextQuestion,
+  submitAnswer,
+  allAnswered,
+  getFinalResults,
+  getTimeRemaining,
+} from "@/lib/games/trivia";
 
 // POST /api/matches/[id]/action - Agent submits an action
 export async function POST(
@@ -23,7 +32,7 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { action, payload } = body;
+    const { action, payload = {} } = body;
 
     if (!action) {
       return NextResponse.json(
@@ -67,7 +76,7 @@ export async function POST(
         result = processNegotiationAction(match, agentId, action, payload);
         break;
       case "trivia_blitz":
-        result = processTriviaAction(match, agentId, action, payload);
+        result = await processTriviaAction(match, agentId, action, payload);
         break;
       case "roast_battle":
         result = processRoastAction(match, agentId, action, payload);
@@ -103,7 +112,8 @@ export async function POST(
   }
 }
 
-// Game-specific action processors
+// ========== GAME-SPECIFIC ACTION HANDLERS ==========
+
 function processBugBashAction(
   match: ReturnType<typeof getMatch>,
   agentId: string,
@@ -114,7 +124,7 @@ function processBugBashAction(
 
   switch (action) {
     case "submit_code":
-      // TODO: Actually run the code in a sandbox
+      // TODO: Actually run the code in a Docker sandbox
       const code = payload.code as string;
       if (!code) {
         return { error: "No code provided" };
@@ -172,9 +182,24 @@ function processNegotiationAction(
       const myShare = payload.my_share as number;
       const theirShare = payload.their_share as number;
 
+      if (typeof myShare !== "number" || typeof theirShare !== "number") {
+        return { error: "my_share and their_share must be numbers" };
+      }
+
       if (myShare + theirShare !== 100) {
         return { error: "Shares must sum to 100" };
       }
+
+      if (myShare < 0 || theirShare < 0) {
+        return { error: "Shares cannot be negative" };
+      }
+
+      // Record the proposal in match state
+      recordAction(match.id, agentId, {
+        type: "proposal",
+        myShare,
+        theirShare,
+      });
 
       return {
         status: "proposed",
@@ -186,7 +211,8 @@ function processNegotiationAction(
       // Accept current proposal
       const opponentId = match.agentA.id === agentId ? match.agentB.id : match.agentA.id;
       
-      // Placeholder: whoever accepted gets the worse deal typically
+      // TODO: Get actual proposal amounts from state
+      // For now, simple scoring
       updateScore(match.id, agentId, 40);
       updateScore(match.id, opponentId, 60);
       endMatch(match.id, "completed", opponentId);
@@ -207,36 +233,116 @@ function processNegotiationAction(
   }
 }
 
-function processTriviaAction(
+async function processTriviaAction(
   match: ReturnType<typeof getMatch>,
   agentId: string,
   action: string,
   payload: Record<string, unknown>
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
+  // Get or initialize trivia state
+  let triviaState = getTriviaState(match.id);
+  if (!triviaState) {
+    triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
+  }
+
   switch (action) {
-    case "answer":
+    case "get_question": {
+      // Get current or next question
+      if (triviaState.status === "waiting" || triviaState.status === "between") {
+        const question = nextQuestion(match.id);
+        if (!question) {
+          // No more questions, end match
+          const results = getFinalResults(match.id);
+          if (results) {
+            updateScore(match.id, match.agentA.id, results.scores[match.agentA.id] || 0);
+            updateScore(match.id, match.agentB.id, results.scores[match.agentB.id] || 0);
+            endMatch(match.id, "completed", results.winnerId || undefined);
+          }
+          return {
+            status: "completed",
+            message: "All questions answered! Match complete.",
+            finalScores: results?.scores,
+            winnerId: results?.winnerId,
+          };
+        }
+        return {
+          status: "question",
+          question,
+          timeRemaining: 15,
+        };
+      }
+
+      // Already on a question
+      const currentQuestion = triviaState.questions[triviaState.currentQuestionIndex];
+      if (currentQuestion) {
+        return {
+          status: "question",
+          question: {
+            questionId: currentQuestion.id,
+            questionNumber: triviaState.currentQuestionIndex + 1,
+            totalQuestions: triviaState.questions.length,
+            category: currentQuestion.category,
+            difficulty: currentQuestion.difficulty,
+            question: currentQuestion.question,
+            answers: [currentQuestion.correct_answer, ...currentQuestion.incorrect_answers].sort(() => Math.random() - 0.5),
+            points: currentQuestion.points,
+            timeLimit: 15,
+          },
+          timeRemaining: getTimeRemaining(match.id),
+        };
+      }
+
+      return { error: "No current question" };
+    }
+
+    case "answer": {
       const answer = payload.answer as string;
       const questionId = payload.question_id as string;
 
-      // Placeholder: random correctness
-      const correct = Math.random() > 0.5;
-      const points = correct ? 1 : -0.5;
-      
-      const agent = match.agentA.id === agentId ? match.agentA : match.agentB;
-      updateScore(match.id, agentId, agent.score + points);
+      if (!answer || !questionId) {
+        return { error: "Missing answer or question_id" };
+      }
+
+      const result = submitAnswer(match.id, agentId, questionId, answer);
+
+      if (!result.accepted) {
+        if (result.alreadyAnswered) {
+          return { error: "You already answered this question" };
+        }
+        if (result.wrongQuestion) {
+          return { error: "Invalid question ID" };
+        }
+        return { error: "Failed to submit answer" };
+      }
+
+      // Check if both agents answered
+      const bothAnswered = allAnswered(match.id, [match.agentA.id, match.agentB.id]);
+
+      // Update match scores
+      const updatedState = getTriviaState(match.id);
+      if (updatedState) {
+        updateScore(match.id, match.agentA.id, updatedState.scores[match.agentA.id] || 0);
+        updateScore(match.id, match.agentB.id, updatedState.scores[match.agentB.id] || 0);
+      }
 
       return {
-        questionId,
-        answer,
-        correct,
-        points,
-        newScore: agent.score + points,
+        status: "answered",
+        correct: result.correct,
+        correctAnswer: result.correctAnswer,
+        points: result.points,
+        speedBonus: result.speedBonus,
+        totalScore: result.totalPoints,
+        bothAnswered,
+        message: result.correct 
+          ? `Correct! +${result.points} points` 
+          : `Wrong! The answer was: ${result.correctAnswer}`,
       };
+    }
 
     default:
-      return { error: `Unknown action: ${action}` };
+      return { error: `Unknown trivia action: ${action}` };
   }
 }
 
@@ -252,8 +358,17 @@ function processRoastAction(
     case "roast":
       const roast = payload.roast as string;
       if (!roast || roast.length < 10) {
-        return { error: "Roast too short" };
+        return { error: "Roast too short (minimum 10 characters)" };
       }
+      if (roast.length > 500) {
+        return { error: "Roast too long (maximum 500 characters)" };
+      }
+
+      // Record the roast
+      recordAction(match.id, agentId, {
+        type: "roast",
+        content: roast,
+      });
 
       return {
         status: "submitted",
@@ -261,7 +376,11 @@ function processRoastAction(
         message: "Roast submitted! Waiting for opponent...",
       };
 
+    case "vote":
+      // For audience voting (not agent action)
+      return { error: "Voting is for spectators only" };
+
     default:
-      return { error: `Unknown action: ${action}` };
+      return { error: `Unknown roast action: ${action}` };
   }
 }
