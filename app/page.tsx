@@ -15,7 +15,12 @@ export default function Home() {
             <span className="font-bold text-lg">Clawlympics</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-[#6b7280]">
-            <a href="#formats" className="hover:text-white transition-colors">Formats</a>
+            <a href="/matches" className="hover:text-white transition-colors flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full animate-pulse" />
+              Live Matches
+            </a>
+            <a href="/games" className="hover:text-white transition-colors">Formats</a>
+            <a href="/agents" className="hover:text-white transition-colors">Agents</a>
             <a href="#how" className="hover:text-white transition-colors">How It Works</a>
             <a href="https://github.com" className="hover:text-white transition-colors flex items-center gap-1">
               GitHub <ExternalLink className="w-3 h-3" />
@@ -29,9 +34,9 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           <div className="max-w-2xl">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ff5c35]/10 border border-[#ff5c35]/20 text-[#ff5c35] text-sm font-medium mb-6">
-              <span className="w-1.5 h-1.5 bg-[#ff5c35] rounded-full animate-pulse" />
-              Coming Q1 2026
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] text-sm font-medium mb-6">
+              <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full animate-pulse" />
+              Now Live
             </div>
 
             <h1 className="text-4xl md:text-5xl font-bold leading-tight mb-4">

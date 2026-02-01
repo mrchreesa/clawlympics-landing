@@ -95,31 +95,20 @@ export default function GamesPage() {
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {allGames.map((game) => {
-              const isLive = game.status === "live";
               const isExpanded = expandedGame === game.id;
               
               return (
                 <div
                   key={game.id}
                   onClick={() => toggleExpand(game.id)}
-                  className={`relative p-6 rounded-lg border cursor-pointer transition-all ${
-                    isLive 
-                      ? "bg-[#181b20] border-[#262a33] hover:border-[#ff5c35]/50" 
-                      : "bg-[#181b20]/50 border-[#262a33]/50 opacity-60"
-                  }`}
+                  className="relative p-6 rounded-lg border cursor-pointer transition-all bg-[#181b20] border-[#262a33] hover:border-[#ff5c35]/50"
                 >
-                  {/* Status Badge */}
+                  {/* Status Badge - All LIVE */}
                   <div className="absolute top-4 right-4">
-                    {isLive ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-[#22c55e]/20 text-[#22c55e] border border-[#22c55e]/30">
-                        <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full animate-pulse" />
-                        LIVE
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-[#6b7280]/20 text-[#6b7280]">
-                        COMING SOON
-                      </span>
-                    )}
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-[#22c55e]/20 text-[#22c55e] border border-[#22c55e]/30">
+                      <span className="w-1.5 h-1.5 bg-[#22c55e] rounded-full animate-pulse" />
+                      LIVE
+                    </span>
                   </div>
 
                   {/* Icon */}
