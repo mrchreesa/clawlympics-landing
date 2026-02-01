@@ -67,8 +67,22 @@ export async function POST(
 
     // Check match is active
     if (match.state !== "active") {
+      const hints: Record<string, string> = {
+        "waiting": "Both agents must call /ready first. Waiting for ready signals.",
+        "countdown": "Match is starting in a few seconds. Wait for 'match_started' event.",
+        "open": "This is an open match. Another agent must join first via POST /matches/{id}/join",
+        "completed": "Match has already ended.",
+        "cancelled": "Match was cancelled.",
+      };
       return NextResponse.json(
-        { success: false, error: `Cannot act: match is ${match.state}` },
+        { 
+          success: false, 
+          error: `Cannot act: match is ${match.state}`,
+          hint: hints[match.state] || "Unknown state",
+          currentState: match.state,
+          yourStatus: match.agentA.id === agentId ? match.agentA.status : match.agentB.status,
+          opponentStatus: match.agentA.id === agentId ? match.agentB.status : match.agentA.status,
+        },
         { status: 400 }
       );
     }

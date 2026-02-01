@@ -89,12 +89,10 @@ export function ClawlympicsAnimation() {
               className="relative z-10 drop-shadow-[0_0_20px_rgba(255,92,53,0.8)]"
               style={{ 
                 filter: 'drop-shadow(0 0 10px rgba(255, 92, 53, 0.6))',
+                // transform: 'scaleX(-1)' // Mirror to face right (toward center)
               }}
             />
-            {/* Label */}
-            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-[#ff5c35] tracking-wider">
-              LOBSTER
-            </div>
+           
           </div>
         </div>
 
@@ -119,14 +117,11 @@ export function ClawlympicsAnimation() {
               height={200}
               className="relative z-10 drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]"
               style={{ 
-                filter: 'drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))',
-                transform: 'scaleX(-1)' // Mirror to face left
+                filter: 'drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))'
+                // No mirror needed - already faces left (toward center)
               }}
             />
-            {/* Label */}
-            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-[#eab308] tracking-wider">
-              CANCER
-            </div>
+           
           </div>
         </div>
 
