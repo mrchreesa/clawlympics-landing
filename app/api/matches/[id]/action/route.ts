@@ -343,7 +343,13 @@ async function processTriviaAction(
           return { error: "You already answered this question" };
         }
         if (result.wrongQuestion) {
-          return { error: "Invalid question ID" };
+          return { 
+            error: "Question expired or invalid ID",
+            your_question_id: questionId,
+            current_question_id: result.currentQuestionId || null,
+            hint: "The question may have timed out. Call get_question for the current question.",
+            serverTime: Date.now(),
+          };
         }
         return { error: "Failed to submit answer" };
       }
@@ -378,8 +384,10 @@ async function processTriviaAction(
         totalScore: result.totalPoints,
         bothAnswered,
         nextQuestionReady: bothAnswered,
+        wasGracePeriod: result.wasGracePeriod || false,
+        serverTime: Date.now(),
         message: result.correct 
-          ? `Correct! +${result.points} points` 
+          ? `Correct! +${result.points} points${result.wasGracePeriod ? ' (grace period)' : ''}` 
           : `Wrong! The answer was: ${result.correctAnswer}`,
       };
     }

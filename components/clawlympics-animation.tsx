@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import Image from "next/image";
 
 export function ClawlympicsAnimation() {
   const [mounted, setMounted] = useState(false);
@@ -9,213 +10,358 @@ export function ClawlympicsAnimation() {
     setMounted(true);
   }, []);
 
+  // Generate random positions for energy particles
+  const energyParticles = useMemo(() => 
+    [...Array(20)].map((_, i) => ({
+      id: i,
+      size: Math.random() * 4 + 2,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      delay: Math.random() * 4,
+      duration: Math.random() * 3 + 2,
+      color: ['#ff5c35', '#ff8a65', '#ffa726', '#ffcc02', '#fff'][Math.floor(Math.random() * 5)]
+    })), []
+  );
+
+  // Orbiting agents data
+  const orbitingAgents = useMemo(() => [
+    { label: 'A', color: '#3b82f6', delay: 0, duration: 8, radius: 135, direction: 1 },
+    { label: 'B', color: '#22c55e', delay: 2, duration: 10, radius: 145, direction: -1 },
+    { label: 'C', color: '#ef4444', delay: 1, duration: 12, radius: 125, direction: 1 },
+    { label: 'D', color: '#eab308', delay: 3, duration: 6, radius: 155, direction: -1 },
+  ], []);
+
   if (!mounted) return null;
 
   return (
     <div className="relative w-full h-64 md:h-80 lg:h-96 overflow-hidden">
-      {/* Background Grid */}
-      <div className="absolute inset-0 opacity-20">
+      {/* Radial gradient background glow */}
+      <div className="absolute inset-0">
         <div 
-          className="w-full h-full"
+          className="absolute inset-0"
           style={{
-            backgroundImage: `
-              linear-gradient(rgba(255, 92, 53, 0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255, 92, 53, 0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '40px 40px',
-            animation: 'gridMove 20s linear infinite'
+            background: `
+              radial-gradient(ellipse 60% 40% at 50% 50%, rgba(255, 92, 53, 0.2) 0%, transparent 70%),
+              radial-gradient(ellipse 80% 60% at 50% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 50%)
+            `
           }}
         />
       </div>
 
-      {/* Central Arena Ring */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <svg
-          viewBox="0 0 400 400"
-          className="w-full h-full max-w-md max-h-md"
-          style={{ animation: 'pulse 4s ease-in-out infinite' }}
-        >
-          {/* Olympic-style Rings Background */}
-          <g className="opacity-30" style={{ animation: 'rotate 30s linear infinite' }}>
-            <circle cx="130" cy="150" r="40" fill="none" stroke="#3b82f6" strokeWidth="3" />
-            <circle cx="200" cy="150" r="40" fill="none" stroke="#000" strokeWidth="3" />
-            <circle cx="270" cy="150" r="40" fill="none" stroke="#ef4444" strokeWidth="3" />
-            <circle cx="165" cy="190" r="40" fill="none" stroke="#eab308" strokeWidth="3" />
-            <circle cx="235" cy="190" r="40" fill="none" stroke="#22c55e" strokeWidth="3" />
-          </g>
-
-          {/* Left Claw */}
-          <g style={{ animation: 'clawLeft 3s ease-in-out infinite' }}>
-            <path
-              d="M 80 200 Q 60 150 100 120 Q 130 100 150 140 L 140 160 Q 120 140 100 160 Q 80 180 90 200 Z"
-              fill="#ff5c35"
-              stroke="#ff5c35"
-              strokeWidth="2"
-            />
-            <path
-              d="M 90 200 Q 70 180 85 160 Q 100 145 120 155"
-              fill="none"
-              stroke="#ff7c5c"
-              strokeWidth="4"
-              strokeLinecap="round"
-            />
-            <circle cx="85" cy="165" r="3" fill="#fff" opacity="0.5" />
-          </g>
-
-          {/* Right Claw */}
-          <g style={{ animation: 'clawRight 3s ease-in-out infinite' }}>
-            <path
-              d="M 320 200 Q 340 150 300 120 Q 270 100 250 140 L 260 160 Q 280 140 300 160 Q 320 180 310 200 Z"
-              fill="#ff5c35"
-              stroke="#ff5c35"
-              strokeWidth="2"
-            />
-            <path
-              d="M 310 200 Q 330 180 315 160 Q 300 145 280 155"
-              fill="none"
-              stroke="#ff7c5c"
-              strokeWidth="4"
-              strokeLinecap="round"
-            />
-            <circle cx="315" cy="165" r="3" fill="#fff" opacity="0.5" />
-          </g>
-
-          {/* Trophy in Center */}
-          <g style={{ animation: 'trophyFloat 2s ease-in-out infinite' }}>
-            {/* Trophy Cup */}
-            <path
-              d="M 185 140 L 185 120 Q 185 110 200 110 Q 215 110 215 120 L 215 140 Q 215 155 200 160 Q 185 155 185 140 Z"
-              fill="#eab308"
-              stroke="#ca8a04"
-              strokeWidth="2"
-            />
-            <rect x="195" y="160" width="10" height="15" fill="#eab308" stroke="#ca8a04" strokeWidth="2" />
-            <rect x="185" y="175" width="30" height="5" fill="#eab308" stroke="#ca8a04" strokeWidth="2" rx="2" />
-            
-            {/* Trophy Handles */}
-            <path
-              d="M 185 130 Q 175 130 175 140 Q 175 150 185 145"
-              fill="none"
-              stroke="#eab308"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            <path
-              d="M 215 130 Q 225 130 225 140 Q 225 150 215 145"
-              fill="none"
-              stroke="#eab308"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
-            
-            {/* Sparkles */}
-            <g style={{ animation: 'sparkle 1.5s ease-in-out infinite' }}>
-              <path d="M 200 100 L 202 105 L 207 105 L 203 108 L 205 113 L 200 110 L 195 113 L 197 108 L 193 105 L 198 105 Z" fill="#fff" />
-            </g>
-          </g>
-
-          {/* AI Agents Orbiting */}
-          <g style={{ animation: 'orbit 8s linear infinite' }}>
-            <circle cx="200" cy="80" r="8" fill="#3b82f6" />
-            <text x="200" y="84" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="bold">A</text>
-          </g>
-          
-          <g style={{ animation: 'orbitReverse 10s linear infinite' }}>
-            <circle cx="320" cy="200" r="8" fill="#22c55e" />
-            <text x="320" y="204" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="bold">B</text>
-          </g>
-          
-          <g style={{ animation: 'orbit 12s linear infinite' }}>
-            <circle cx="200" cy="320" r="8" fill="#ef4444" />
-            <text x="200" y="324" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="bold">C</text>
-          </g>
-          
-          <g style={{ animation: 'orbitReverse 6s linear infinite' }}>
-            <circle cx="80" cy="200" r="8" fill="#eab308" />
-            <text x="80" y="204" textAnchor="middle" fill="#fff" fontSize="8" fontWeight="bold">D</text>
-          </g>
-
-          {/* VS Text */}
-          <text
-            x="200"
-            y="280"
-            textAnchor="middle"
-            fill="#ff5c35"
-            fontSize="24"
-            fontWeight="bold"
-            style={{ animation: 'pulseText 2s ease-in-out infinite' }}
-          >
-            VS
-          </text>
+      {/* Hexagonal grid pattern */}
+      <div className="absolute inset-0 opacity-10">
+        <svg width="100%" height="100%" className="absolute inset-0">
+          <defs>
+            <pattern id="hexGrid" width="56" height="100" patternUnits="userSpaceOnUse" patternTransform="scale(0.5)">
+              <path 
+                d="M28 0L56 16.67V50L28 66.67L0 50V16.67L28 0ZM28 100L56 83.33V116.67L28 133.33L0 116.67V83.33L28 100Z" 
+                fill="none" 
+                stroke="rgba(255, 92, 53, 0.3)" 
+                strokeWidth="1"
+              />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hexGrid)" style={{ animation: 'gridFloat 20s linear infinite' }} />
         </svg>
       </div>
 
-      {/* Floating Particles */}
-      <div className="absolute inset-0 pointer-events-none">
-        {[...Array(6)].map((_, i) => (
+      {/* Main Battle Arena */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {/* Left Side - Lobster Claw */}
+        <div 
+          className="absolute left-[5%] md:left-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
+          style={{ animation: 'lobsterAttack 3s ease-in-out infinite' }}
+        >
+          <div className="relative">
+            {/* Glow effect behind lobster */}
+            <div 
+              className="absolute inset-0 blur-xl opacity-60"
+              style={{
+                background: 'radial-gradient(circle, rgba(255, 92, 53, 0.8) 0%, transparent 70%)',
+                transform: 'scale(1.5)'
+              }}
+            />
+            <Image
+              src="/lobster-claw.png"
+              alt="Lobster Claw"
+              width={200}
+              height={200}
+              className="relative z-10 drop-shadow-[0_0_20px_rgba(255,92,53,0.8)]"
+              style={{ 
+                filter: 'drop-shadow(0 0 10px rgba(255, 92, 53, 0.6))',
+              }}
+            />
+            {/* Label */}
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-[#ff5c35] tracking-wider">
+              LOBSTER
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side - Crab Claw */}
+        <div 
+          className="absolute right-[5%] md:right-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
+          style={{ animation: 'crabAttack 3s ease-in-out infinite' }}
+        >
+          <div className="relative">
+            {/* Glow effect behind crab */}
+            <div 
+              className="absolute inset-0 blur-xl opacity-60"
+              style={{
+                background: 'radial-gradient(circle, rgba(234, 179, 8, 0.8) 0%, transparent 70%)',
+                transform: 'scale(1.5)'
+              }}
+            />
+            <Image
+              src="/crab-claw.png"
+              alt="Crab Claw"
+              width={200}
+              height={200}
+              className="relative z-10 drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]"
+              style={{ 
+                filter: 'drop-shadow(0 0 10px rgba(234, 179, 8, 0.6))',
+                transform: 'scaleX(-1)' // Mirror to face left
+              }}
+            />
+            {/* Label */}
+            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs font-bold text-[#eab308] tracking-wider">
+              CANCER
+            </div>
+          </div>
+        </div>
+
+        {/* Center VS Badge and Effects */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <svg
+            viewBox="0 0 400 400"
+            className="w-full h-full max-w-md max-h-md"
+            style={{ filter: 'drop-shadow(0 0 30px rgba(255, 92, 53, 0.2))' }}
+          >
+            <defs>
+              {/* Glowing gradients */}
+              <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="rgba(255, 92, 53, 0.4)" />
+                <stop offset="50%" stopColor="rgba(255, 92, 53, 0.1)" />
+                <stop offset="100%" stopColor="transparent" />
+              </radialGradient>
+
+              <filter id="agentGlow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+
+              {/* Energy ring gradient */}
+              <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#ff5c35" stopOpacity="0.8" />
+                <stop offset="50%" stopColor="#ff8a65" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#ff5c35" stopOpacity="0.8" />
+              </linearGradient>
+            </defs>
+
+            {/* Center glow effect */}
+            <circle cx="200" cy="200" r="80" fill="url(#centerGlow)" style={{ animation: 'pulseGlow 3s ease-in-out infinite' }} />
+
+            {/* Rotating energy rings */}
+            <g style={{ transformOrigin: '200px 200px', animation: 'rotateRing 15s linear infinite' }}>
+              <circle cx="200" cy="200" r="70" fill="none" stroke="url(#ringGradient)" strokeWidth="1" strokeDasharray="10 20" opacity="0.6" />
+            </g>
+            <g style={{ transformOrigin: '200px 200px', animation: 'rotateRingReverse 20s linear infinite' }}>
+              <circle cx="200" cy="200" r="90" fill="none" stroke="#3b82f6" strokeWidth="0.5" strokeDasharray="5 15" opacity="0.4" />
+            </g>
+            <g style={{ transformOrigin: '200px 200px', animation: 'rotateRing 25s linear infinite' }}>
+              <circle cx="200" cy="200" r="110" fill="none" stroke="#22c55e" strokeWidth="0.5" strokeDasharray="3 12" opacity="0.3" />
+            </g>
+
+            {/* Center clash effect */}
+            <g style={{ animation: 'clashPulse 3s ease-in-out infinite' }}>
+              <circle cx="200" cy="200" r="20" fill="rgba(255, 92, 53, 0.3)" />
+              <circle cx="200" cy="200" r="12" fill="rgba(255, 255, 255, 0.2)" />
+              <circle cx="200" cy="200" r="6" fill="rgba(255, 255, 255, 0.5)" />
+            </g>
+
+            {/* Orbiting AI Agents */}
+            {orbitingAgents.map((agent) => (
+              <g 
+                key={agent.label}
+                style={{ 
+                  transformOrigin: '200px 200px',
+                  animation: `${agent.direction === 1 ? 'orbitAgent' : 'orbitAgentReverse'} ${agent.duration}s linear infinite`,
+                  animationDelay: `${agent.delay}s`
+                }}
+                filter="url(#agentGlow)"
+              >
+                {/* Agent trail */}
+                <circle 
+                  cx={200 + agent.radius} 
+                  cy="200" 
+                  r="5" 
+                  fill={agent.color}
+                  opacity="0.3"
+                />
+                {/* Agent body */}
+                <circle 
+                  cx={200 + agent.radius} 
+                  cy="200" 
+                  r="8" 
+                  fill={agent.color}
+                  stroke="rgba(255,255,255,0.3)"
+                  strokeWidth="1"
+                />
+                {/* Agent label */}
+                <text 
+                  x={200 + agent.radius} 
+                  y="204" 
+                  textAnchor="middle" 
+                  fill="#fff" 
+                  fontSize="8" 
+                  fontWeight="bold"
+                >
+                  {agent.label}
+                </text>
+              </g>
+            ))}
+
+            {/* VS Badge */}
+            <g style={{ animation: 'vsPulse 2s ease-in-out infinite' }}>
+              <rect x="170" y="180" width="60" height="40" rx="20" fill="rgba(0, 0, 0, 0.6)" stroke="#ff5c35" strokeWidth="2" />
+              <text
+                x="200"
+                y="208"
+                textAnchor="middle"
+                fill="#ff5c35"
+                fontSize="20"
+                fontWeight="bold"
+                style={{ textShadow: '0 0 15px rgba(255, 92, 53, 1)' }}
+              >
+                VS
+              </text>
+            </g>
+
+            {/* Energy lightning bolts */}
+            <g opacity="0.5" style={{ animation: 'lightningFlash 4s ease-in-out infinite' }}>
+              <path d="M 130 200 L 150 185 L 145 195 L 165 180" stroke="#ff5c35" strokeWidth="2" fill="none" strokeLinecap="round" />
+              <path d="M 270 200 L 250 185 L 255 195 L 235 180" stroke="#eab308" strokeWidth="2" fill="none" strokeLinecap="round" />
+            </g>
+            <g opacity="0.5" style={{ animation: 'lightningFlash 4s ease-in-out infinite 2s' }}>
+              <path d="M 130 200 L 150 215 L 145 205 L 165 220" stroke="#ff5c35" strokeWidth="2" fill="none" strokeLinecap="round" />
+              <path d="M 270 200 L 250 215 L 255 205 L 235 220" stroke="#eab308" strokeWidth="2" fill="none" strokeLinecap="round" />
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      {/* Floating Energy Particles */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {energyParticles.map((particle) => (
           <div
-            key={i}
-            className="absolute w-2 h-2 rounded-full"
+            key={particle.id}
+            className="absolute rounded-full"
             style={{
-              background: ['#ff5c35', '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6'][i],
-              left: `${15 + i * 15}%`,
-              top: `${20 + (i % 3) * 25}%`,
-              animation: `float ${3 + i * 0.5}s ease-in-out infinite`,
-              animationDelay: `${i * 0.3}s`
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              background: `radial-gradient(circle, ${particle.color} 0%, transparent 70%)`,
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              animation: `floatParticle ${particle.duration}s ease-in-out infinite`,
+              animationDelay: `${particle.delay}s`,
+              boxShadow: `0 0 ${particle.size * 2}px ${particle.color}`
             }}
           />
         ))}
       </div>
 
+      {/* Corner accent lines */}
+      <div className="absolute top-4 left-4 w-16 h-16 opacity-40">
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#ff5c35] to-transparent" />
+        <div className="absolute top-0 left-0 h-full w-[2px] bg-gradient-to-b from-[#ff5c35] to-transparent" />
+      </div>
+      <div className="absolute top-4 right-4 w-16 h-16 opacity-40">
+        <div className="absolute top-0 right-0 w-full h-[2px] bg-gradient-to-l from-[#eab308] to-transparent" />
+        <div className="absolute top-0 right-0 h-full w-[2px] bg-gradient-to-b from-[#eab308] to-transparent" />
+      </div>
+      <div className="absolute bottom-4 left-4 w-16 h-16 opacity-40">
+        <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#ff5c35] to-transparent" />
+        <div className="absolute bottom-0 left-0 h-full w-[2px] bg-gradient-to-t from-[#ff5c35] to-transparent" />
+      </div>
+      <div className="absolute bottom-4 right-4 w-16 h-16 opacity-40">
+        <div className="absolute bottom-0 right-0 w-full h-[2px] bg-gradient-to-l from-[#eab308] to-transparent" />
+        <div className="absolute bottom-0 right-0 h-full w-[2px] bg-gradient-to-t from-[#eab308] to-transparent" />
+      </div>
+
       <style jsx>{`
-        @keyframes gridMove {
+        @keyframes gridFloat {
           0% { transform: translate(0, 0); }
-          100% { transform: translate(40px, 40px); }
+          100% { transform: translate(28px, 50px); }
         }
-        
-        @keyframes rotate {
+
+        @keyframes lobsterAttack {
+          0%, 100% { transform: translateY(-50%) translateX(0) rotate(0deg); }
+          25% { transform: translateY(-50%) translateX(15px) rotate(3deg); }
+          50% { transform: translateY(-50%) translateX(25px) rotate(5deg); }
+          75% { transform: translateY(-50%) translateX(15px) rotate(3deg); }
+        }
+
+        @keyframes crabAttack {
+          0%, 100% { transform: translateY(-50%) translateX(0) rotate(0deg); }
+          25% { transform: translateY(-50%) translateX(-15px) rotate(-3deg); }
+          50% { transform: translateY(-50%) translateX(-25px) rotate(-5deg); }
+          75% { transform: translateY(-50%) translateX(-15px) rotate(-3deg); }
+        }
+
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 0.4; transform: scale(1); }
+          50% { opacity: 0.8; transform: scale(1.15); }
+        }
+
+        @keyframes rotateRing {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
-        
-        @keyframes clawLeft {
-          0%, 100% { transform: translateX(0) rotate(0deg); }
-          50% { transform: translateX(10px) rotate(-5deg); }
+
+        @keyframes rotateRingReverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
         }
-        
-        @keyframes clawRight {
-          0%, 100% { transform: translateX(0) rotate(0deg); }
-          50% { transform: translateX(-10px) rotate(5deg); }
+
+        @keyframes clashPulse {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.8); }
         }
-        
-        @keyframes trophyFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-5px); }
+
+        @keyframes orbitAgent {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
-        
-        @keyframes sparkle {
-          0%, 100% { opacity: 0.3; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.2); }
+
+        @keyframes orbitAgentReverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
         }
-        
-        @keyframes orbit {
-          from { transform: rotate(0deg) translateX(120px) rotate(0deg); }
-          to { transform: rotate(360deg) translateX(120px) rotate(-360deg); }
+
+        @keyframes vsPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.15); }
         }
-        
-        @keyframes orbitReverse {
-          from { transform: rotate(360deg) translateX(100px) rotate(-360deg); }
-          to { transform: rotate(0deg) translateX(100px) rotate(0deg); }
+
+        @keyframes lightningFlash {
+          0%, 45%, 55%, 100% { opacity: 0; }
+          48%, 52% { opacity: 0.8; }
         }
-        
-        @keyframes pulseText {
-          0%, 100% { opacity: 0.6; }
-          50% { opacity: 1; }
-        }
-        
-        @keyframes float {
-          0%, 100% { transform: translateY(0) scale(1); }
-          50% { transform: translateY(-20px) scale(1.2); }
+
+        @keyframes floatParticle {
+          0%, 100% { 
+            transform: translateY(0) translateX(0) scale(1);
+            opacity: 0;
+          }
+          10% { opacity: 0.8; }
+          50% { 
+            transform: translateY(-30px) translateX(10px) scale(1.2);
+            opacity: 0.6;
+          }
+          90% { opacity: 0.3; }
         }
       `}</style>
     </div>

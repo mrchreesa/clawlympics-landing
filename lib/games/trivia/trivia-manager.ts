@@ -53,6 +53,7 @@ export interface TriviaQuestionForAgent {
 
 const QUESTION_TIME_LIMIT = 15; // seconds per question
 const SPEED_BONUS_MAX = 0.5; // up to 50% bonus for fast answers
+const GRACE_PERIOD_MS = 2000; // 2 seconds grace period for late answers
 
 /**
  * Initialize trivia for a match - returns state to be persisted
@@ -211,10 +212,45 @@ export function submitAnswer(
   correctAnswer?: string;
   alreadyAnswered?: boolean;
   wrongQuestion?: boolean;
+  currentQuestionId?: string;
+  wasGracePeriod?: boolean;
 } {
   const currentQuestion = state.questions[state.currentQuestionIndex];
+  const previousQuestion = state.currentQuestionIndex > 0 
+    ? state.questions[state.currentQuestionIndex - 1] 
+    : null;
+  
+  // Check if answering current question
+  let targetQuestion = currentQuestion;
+  let isGracePeriodAnswer = false;
+  
   if (!currentQuestion || currentQuestion.id !== questionId) {
-    return { state, accepted: false, wrongQuestion: true };
+    // Not current question - check if it's previous question within grace period
+    if (previousQuestion && previousQuestion.id === questionId) {
+      // Check if within grace period (2 seconds after question advanced)
+      const timeSinceAdvance = Date.now() - state.questionStartTime;
+      if (timeSinceAdvance <= GRACE_PERIOD_MS) {
+        // Accept as grace period answer for previous question
+        targetQuestion = previousQuestion;
+        isGracePeriodAnswer = true;
+      } else {
+        // Too late even for grace period
+        return { 
+          state, 
+          accepted: false, 
+          wrongQuestion: true,
+          currentQuestionId: currentQuestion?.id,
+        };
+      }
+    } else {
+      // Completely wrong question ID
+      return { 
+        state, 
+        accepted: false, 
+        wrongQuestion: true,
+        currentQuestionId: currentQuestion?.id,
+      };
+    }
   }
 
   // Check if already answered this question
@@ -225,8 +261,12 @@ export function submitAnswer(
     return { state, accepted: false, alreadyAnswered: true };
   }
 
-  const responseTimeMs = Date.now() - state.questionStartTime;
-  const correct = checkAnswer(currentQuestion, answer);
+  // Calculate response time (for grace period answers, use the original question's start time)
+  const responseTimeMs = isGracePeriodAnswer 
+    ? (QUESTION_TIME_LIMIT * 1000) + (Date.now() - state.questionStartTime) // Was late
+    : Date.now() - state.questionStartTime;
+  
+  const correct = checkAnswer(targetQuestion, answer);
 
   // Calculate points with speed bonus
   let points = 0;
@@ -234,12 +274,15 @@ export function submitAnswer(
 
   if (correct) {
     // Base points for difficulty
-    points = currentQuestion.points;
+    points = targetQuestion.points;
 
     // Speed bonus: faster = more bonus (up to 50%)
-    const timeRatio = Math.max(0, 1 - responseTimeMs / (QUESTION_TIME_LIMIT * 1000));
-    speedBonus = Math.round(points * SPEED_BONUS_MAX * timeRatio * 100) / 100;
-    points += speedBonus;
+    // Grace period answers get no speed bonus (they were late)
+    if (!isGracePeriodAnswer) {
+      const timeRatio = Math.max(0, 1 - responseTimeMs / (QUESTION_TIME_LIMIT * 1000));
+      speedBonus = Math.round(points * SPEED_BONUS_MAX * timeRatio * 100) / 100;
+      points += speedBonus;
+    }
 
     // First correct answer bonus
     const otherCorrectAnswer = state.answers.find(
@@ -276,7 +319,8 @@ export function submitAnswer(
     points: correct ? points : -0.5,
     speedBonus: correct ? speedBonus : 0,
     totalPoints: state.scores[agentId],
-    correctAnswer: currentQuestion.correct_answer,
+    correctAnswer: targetQuestion.correct_answer,
+    wasGracePeriod: isGracePeriodAnswer,
   };
 }
 
