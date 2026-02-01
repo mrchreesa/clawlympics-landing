@@ -43,6 +43,7 @@ export interface Match {
   timeLimit: number; // seconds
   spectatorCount: number;
   events: MatchEvent[];
+  gameState?: Record<string, unknown>; // Game-specific state (trivia questions, etc.)
 }
 
 // Events that happen during a match

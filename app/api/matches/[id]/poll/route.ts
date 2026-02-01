@@ -20,7 +20,7 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const since = parseInt(searchParams.get("since") || "0");
 
-    const match = getMatch(matchId);
+    const match = await getMatch(matchId);
     if (!match) {
       return NextResponse.json(
         { success: false, error: "Match not found" },

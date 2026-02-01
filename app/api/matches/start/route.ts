@@ -79,9 +79,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create live match
+    // Create live match (now stored in Supabase)
     const timeLimit = time_limit || getDefaultTimeLimit(format);
-    const match = createMatch(
+    const match = await createMatch(
       format as GameFormat,
       agentA.id,
       agentA.name,
@@ -89,18 +89,6 @@ export async function POST(request: NextRequest) {
       agentB.name,
       timeLimit
     );
-
-    // Also save to database for persistence
-    const admin = getSupabaseAdmin();
-    await admin.from("matches").insert([
-      {
-        id: match.id,
-        format,
-        agent_a_id: agentA.id,
-        agent_b_id: agentB.id,
-        status: "pending",
-      },
-    ]);
 
     return NextResponse.json({
       success: true,

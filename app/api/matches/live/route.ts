@@ -4,7 +4,7 @@ import { getActiveMatches } from "@/lib/orchestrator/match-manager";
 // GET /api/matches/live - List all currently active matches
 export async function GET() {
   try {
-    const matches = getActiveMatches();
+    const matches = await getActiveMatches();
 
     return NextResponse.json({
       success: true,

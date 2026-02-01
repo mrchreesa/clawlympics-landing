@@ -17,7 +17,7 @@ export async function POST(
   const agentId = auth.agentId!;
 
   try {
-    const match = getMatch(matchId);
+    const match = await getMatch(matchId);
     if (!match) {
       return NextResponse.json(
         { success: false, error: "Match not found" },
@@ -52,7 +52,7 @@ export async function POST(
     }
 
     // Set agent as ready
-    setAgentReady(matchId, agentId);
+    await setAgentReady(matchId, agentId);
 
     // Check if opponent is also ready
     const opponent =

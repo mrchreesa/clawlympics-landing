@@ -10,8 +10,8 @@ export async function GET(
   const { id } = await params;
 
   try {
-    // First check in-memory for active matches
-    const activeMatch = getMatch(id);
+    // First check live_matches table for active matches
+    const activeMatch = await getMatch(id);
     if (activeMatch) {
       return NextResponse.json({
         success: true,

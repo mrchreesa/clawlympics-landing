@@ -42,7 +42,7 @@ export async function POST(
       );
     }
 
-    const match = getMatch(matchId);
+    const match = await getMatch(matchId);
     if (!match) {
       return NextResponse.json(
         { success: false, error: "Match not found" },
@@ -71,16 +71,16 @@ export async function POST(
 
     switch (match.format) {
       case "bug_bash":
-        result = processBugBashAction(match, agentId, action, payload);
+        result = await processBugBashAction(match, agentId, action, payload);
         break;
       case "negotiation_duel":
-        result = processNegotiationAction(match, agentId, action, payload);
+        result = await processNegotiationAction(match, agentId, action, payload);
         break;
       case "trivia_blitz":
         result = await processTriviaAction(match, agentId, action, payload);
         break;
       case "roast_battle":
-        result = processRoastAction(match, agentId, action, payload);
+        result = await processRoastAction(match, agentId, action, payload);
         break;
       default:
         return NextResponse.json(
@@ -90,7 +90,7 @@ export async function POST(
     }
 
     // Record the action
-    recordAction(matchId, agentId, { action, payload, result });
+    await recordAction(matchId, agentId, { action, payload, result });
 
     return NextResponse.json({
       success: true,
@@ -115,12 +115,12 @@ export async function POST(
 
 // ========== GAME-SPECIFIC ACTION HANDLERS ==========
 
-function processBugBashAction(
-  match: ReturnType<typeof getMatch>,
+async function processBugBashAction(
+  match: Awaited<ReturnType<typeof getMatch>>,
   agentId: string,
   action: string,
   payload: Record<string, unknown>
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
   switch (action) {
@@ -137,11 +137,11 @@ function processBugBashAction(
       const passRate = (testsPassed / testsTotal) * 100;
 
       // Update score
-      updateScore(match.id, agentId, passRate);
+      await updateScore(match.id, agentId, passRate);
 
       // Check for win condition (100% pass rate)
       if (passRate === 100) {
-        endMatch(match.id, "completed", agentId);
+        await endMatch(match.id, "completed", agentId);
         return {
           testsPassed,
           testsTotal,
@@ -170,12 +170,12 @@ function processBugBashAction(
   }
 }
 
-function processNegotiationAction(
-  match: ReturnType<typeof getMatch>,
+async function processNegotiationAction(
+  match: Awaited<ReturnType<typeof getMatch>>,
   agentId: string,
   action: string,
   payload: Record<string, unknown>
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
   switch (action) {
@@ -196,7 +196,7 @@ function processNegotiationAction(
       }
 
       // Record the proposal in match state
-      recordAction(match.id, agentId, {
+      await recordAction(match.id, agentId, {
         type: "proposal",
         myShare,
         theirShare,
@@ -214,9 +214,9 @@ function processNegotiationAction(
       
       // TODO: Get actual proposal amounts from state
       // For now, simple scoring
-      updateScore(match.id, agentId, 40);
-      updateScore(match.id, opponentId, 60);
-      endMatch(match.id, "completed", opponentId);
+      await updateScore(match.id, agentId, 40);
+      await updateScore(match.id, opponentId, 60);
+      await endMatch(match.id, "completed", opponentId);
 
       return {
         status: "accepted",
@@ -235,7 +235,7 @@ function processNegotiationAction(
 }
 
 async function processTriviaAction(
-  match: ReturnType<typeof getMatch>,
+  match: Awaited<ReturnType<typeof getMatch>>,
   agentId: string,
   action: string,
   payload: Record<string, unknown>
@@ -257,9 +257,9 @@ async function processTriviaAction(
           // No more questions, end match
           const results = getFinalResults(match.id);
           if (results) {
-            updateScore(match.id, match.agentA.id, results.scores[match.agentA.id] || 0);
-            updateScore(match.id, match.agentB.id, results.scores[match.agentB.id] || 0);
-            endMatch(match.id, "completed", results.winnerId || undefined);
+            await updateScore(match.id, match.agentA.id, results.scores[match.agentA.id] || 0);
+            await updateScore(match.id, match.agentB.id, results.scores[match.agentB.id] || 0);
+            await endMatch(match.id, "completed", results.winnerId || undefined);
           }
           return {
             status: "completed",
@@ -329,8 +329,8 @@ async function processTriviaAction(
       // Update match scores
       const updatedState = getTriviaState(match.id);
       if (updatedState) {
-        updateScore(match.id, match.agentA.id, updatedState.scores[match.agentA.id] || 0);
-        updateScore(match.id, match.agentB.id, updatedState.scores[match.agentB.id] || 0);
+        await updateScore(match.id, match.agentA.id, updatedState.scores[match.agentA.id] || 0);
+        await updateScore(match.id, match.agentB.id, updatedState.scores[match.agentB.id] || 0);
       }
 
       return {
@@ -353,12 +353,12 @@ async function processTriviaAction(
   }
 }
 
-function processRoastAction(
-  match: ReturnType<typeof getMatch>,
+async function processRoastAction(
+  match: Awaited<ReturnType<typeof getMatch>>,
   agentId: string,
   action: string,
   payload: Record<string, unknown>
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
   switch (action) {
@@ -372,7 +372,7 @@ function processRoastAction(
       }
 
       // Record the roast
-      recordAction(match.id, agentId, {
+      await recordAction(match.id, agentId, {
         type: "roast",
         content: roast,
       });

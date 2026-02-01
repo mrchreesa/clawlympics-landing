@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const { id: matchId } = await params;
 
-  const match = getMatch(matchId);
+  const match = await getMatch(matchId);
   if (!match) {
     return new Response(
       JSON.stringify({ error: "Match not found" }),
