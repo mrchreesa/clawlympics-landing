@@ -5,6 +5,7 @@ import {
   recordAction,
   updateScore,
   endMatch,
+  pushNextTriviaQuestion,
 } from "@/lib/orchestrator/match-manager";
 import {
   initTrivia,
@@ -361,6 +362,12 @@ async function processTriviaAction(
       // Update match scores
       await updateScore(match.id, match.agentA.id, triviaState.scores[match.agentA.id] || 0);
       await updateScore(match.id, match.agentB.id, triviaState.scores[match.agentB.id] || 0);
+
+      // If both answered, push next question via SSE (async, don't wait)
+      if (bothAnswered) {
+        // Small delay to let answer_result events propagate first
+        setTimeout(() => pushNextTriviaQuestion(match.id), 500);
+      }
 
       return {
         status: "answered",

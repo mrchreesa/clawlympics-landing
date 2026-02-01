@@ -423,7 +423,7 @@ async function startCountdown(matchId: string): Promise<void> {
 }
 
 /**
- * Start the match
+ * Start the match and push first question (for trivia)
  */
 async function startMatch(matchId: string): Promise<void> {
   const match = await getMatch(matchId);
@@ -443,8 +443,15 @@ async function startMatch(matchId: string): Promise<void> {
       timeLimit: match.timeLimit,
       agentA: { id: match.agentA.id, name: match.agentA.name },
       agentB: { id: match.agentB.id, name: match.agentB.name },
+      message: "Match started! Listen for 'challenge' events or call get_question.",
     },
   });
+
+  // For trivia matches, push the first question immediately
+  if (match.format === "trivia_blitz") {
+    // Small delay to ensure match_started is received first
+    setTimeout(() => pushNextTriviaQuestion(matchId), 500);
+  }
 
   // Set timeout for match end
   setTimeout(async () => {
@@ -453,6 +460,109 @@ async function startMatch(matchId: string): Promise<void> {
       await endMatch(matchId, "timeout");
     }
   }, match.timeLimit * 1000);
+}
+
+/**
+ * Push next trivia question to all subscribers via SSE
+ * Called automatically when match starts and when question advances
+ */
+export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
+  // Dynamic import to avoid circular dependency
+  const { 
+    initTrivia, 
+    parseTriviaState, 
+    wrapTriviaState, 
+    nextQuestion,
+    getFinalResults 
+  } = await import("@/lib/games/trivia");
+
+  const match = await getMatch(matchId);
+  if (!match || match.state !== "active" || match.format !== "trivia_blitz") return;
+
+  // Load or initialize trivia state
+  let triviaState = parseTriviaState(match.gameState);
+  if (!triviaState) {
+    triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
+  }
+
+  // Get next question
+  const { state: newState, question } = nextQuestion(triviaState);
+  triviaState = newState;
+
+  // Persist state
+  await updateGameState(matchId, wrapTriviaState(triviaState));
+
+  if (!question) {
+    // No more questions - end match
+    const results = getFinalResults(triviaState);
+    if (results) {
+      await updateScore(matchId, match.agentA.id, results.scores[match.agentA.id] || 0);
+      await updateScore(matchId, match.agentB.id, results.scores[match.agentB.id] || 0);
+      await endMatch(matchId, "completed", results.winnerId || undefined);
+    }
+    return;
+  }
+
+  // Push question to all listeners via SSE
+  await emitEvent(matchId, {
+    id: randomUUID(),
+    type: "challenge",
+    timestamp: Date.now(),
+    data: {
+      question,
+      message: `Question ${question.questionNumber}/${question.totalQuestions}: Answer within ${question.timeLimit} seconds!`,
+    },
+  });
+
+  // Set question timeout
+  setTimeout(async () => {
+    await handleTriviaQuestionTimeout(matchId);
+  }, (question.timeLimit + 1) * 1000); // +1s grace period
+}
+
+/**
+ * Handle trivia question timeout - penalize non-answerers and advance
+ */
+async function handleTriviaQuestionTimeout(matchId: string): Promise<void> {
+  const { 
+    parseTriviaState, 
+    wrapTriviaState, 
+    handleQuestionTimeout,
+    isQuestionTimedOut 
+  } = await import("@/lib/games/trivia");
+
+  const match = await getMatch(matchId);
+  if (!match || match.state !== "active") return;
+
+  const triviaState = parseTriviaState(match.gameState);
+  if (!triviaState || !isQuestionTimedOut(triviaState)) return;
+
+  const agentIds = [match.agentA.id, match.agentB.id];
+  const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
+
+  if (timedOutAgents.length > 0) {
+    // Update scores for timed out agents
+    for (const agentId of timedOutAgents) {
+      await updateScore(matchId, agentId, newState.scores[agentId] || 0);
+    }
+
+    // Emit timeout event
+    await emitEvent(matchId, {
+      id: randomUUID(),
+      type: "question_timeout",
+      timestamp: Date.now(),
+      data: {
+        timedOutAgents,
+        message: `Time's up! ${timedOutAgents.length} agent(s) didn't answer. -0.5 penalty each.`,
+      },
+    });
+
+    // Persist and advance to next question
+    await updateGameState(matchId, wrapTriviaState(newState));
+    
+    // Push next question after short delay
+    setTimeout(() => pushNextTriviaQuestion(matchId), 1000);
+  }
 }
 
 /**
