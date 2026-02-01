@@ -22,6 +22,12 @@ export async function GET(
     start(controller) {
       const encoder = new TextEncoder();
 
+      // Extract current trivia state for timer sync
+      const triviaState = match.gameState?.trivia as Record<string, unknown> | undefined;
+      const currentQuestion = triviaState?.questions 
+        ? (triviaState.questions as Array<Record<string, unknown>>)[triviaState.currentQuestionIndex as number]
+        : undefined;
+
       // Send initial match state with spectator count
       const initialEvent = {
         type: "connected",
@@ -44,6 +50,24 @@ export async function GET(
         },
         spectatorCount: (match.spectatorCount || 0) + 1, // Include current viewer
         recentEvents: match.events?.slice(-20) || [], // Send recent events for context
+        // Include current trivia state for timer persistence
+        triviaState: triviaState ? {
+          questionStartTime: triviaState.questionStartTime,
+          currentQuestionIndex: triviaState.currentQuestionIndex,
+          currentQuestion: currentQuestion ? {
+            questionId: currentQuestion.id,
+            questionNumber: (triviaState.currentQuestionIndex as number) + 1,
+            totalQuestions: (triviaState.questions as unknown[]).length,
+            question: currentQuestion.question,
+            answers: triviaState.currentShuffledAnswers || [],
+            category: currentQuestion.category,
+            difficulty: currentQuestion.difficulty,
+            points: currentQuestion.points,
+            timeLimit: 30,
+          } : undefined,
+          scores: triviaState.scores,
+        } : undefined,
+        serverTime: Date.now(), // For client to calculate offset
       };
 
       controller.enqueue(

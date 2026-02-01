@@ -31,7 +31,7 @@ interface TriviaQuestion {
   category: string;
   difficulty: string;
   timeLimit?: number;
-  receivedAt?: number; // When we received this question
+  questionStartTime?: number; // Server timestamp when question started (persistent)
 }
 
 interface AgentAnswer {
@@ -93,9 +93,26 @@ export default function SpectatorPage() {
         setConnected(true);
         setSpectatorCount(data.spectatorCount || 1);
         
-        // Process recent events for context
+        // Restore current question from trivia state (persistent on refresh)
+        if (data.triviaState?.currentQuestion) {
+          const q = data.triviaState.currentQuestion;
+          setCurrentQuestion({
+            questionId: q.questionId,
+            questionNumber: q.questionNumber,
+            totalQuestions: q.totalQuestions,
+            question: q.question,
+            answers: q.answers,
+            category: q.category,
+            difficulty: q.difficulty,
+            timeLimit: q.timeLimit || 30,
+            questionStartTime: data.triviaState.questionStartTime,
+          });
+        }
+        
+        // Process recent events for context (but don't override current question)
         if (data.recentEvents) {
-          data.recentEvents.forEach((evt: MatchEvent) => processEvent(evt));
+          // Only add events to the log, don't re-trigger question state changes
+          setEvents(data.recentEvents.slice().reverse());
         }
       } else if (data.type === "heartbeat") {
         // Keep-alive, ignore
@@ -130,8 +147,8 @@ export default function SpectatorPage() {
         answers: q.answers as string[],
         category: q.category as string,
         difficulty: q.difficulty as string,
-        timeLimit: (q.timeLimit as number) || 45,
-        receivedAt: Date.now(),
+        timeLimit: (q.timeLimit as number) || 30,
+        questionStartTime: event.timestamp, // Use server timestamp for persistence
       });
       // Clear previous answers for new question
       setAgentAnswers([]);
@@ -159,8 +176,8 @@ export default function SpectatorPage() {
           answers: q.answers as string[],
           category: q.category as string,
           difficulty: q.difficulty as string,
-          timeLimit: (q.timeLimit as number) || 45,
-          receivedAt: Date.now(),
+          timeLimit: (q.timeLimit as number) || 30,
+          questionStartTime: event.timestamp, // Use event timestamp
         });
         // Clear answers for new question
         setAgentAnswers([]);
@@ -281,15 +298,15 @@ export default function SpectatorPage() {
     return () => clearInterval(interval);
   }, [match]);
 
-  // Question countdown timer
+  // Question countdown timer (uses server timestamp for persistence across refresh)
   useEffect(() => {
-    if (!currentQuestion?.receivedAt || !currentQuestion?.timeLimit) {
+    if (!currentQuestion?.questionStartTime || !currentQuestion?.timeLimit) {
       setQuestionTimeLeft(null);
       return;
     }
 
     const updateTimer = () => {
-      const elapsed = Math.floor((Date.now() - currentQuestion.receivedAt!) / 1000);
+      const elapsed = Math.floor((Date.now() - currentQuestion.questionStartTime!) / 1000);
       const remaining = Math.max(0, currentQuestion.timeLimit! - elapsed);
       setQuestionTimeLeft(remaining);
     };
@@ -298,7 +315,7 @@ export default function SpectatorPage() {
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [currentQuestion?.questionId, currentQuestion?.receivedAt, currentQuestion?.timeLimit]);
+  }, [currentQuestion?.questionId, currentQuestion?.questionStartTime, currentQuestion?.timeLimit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
