@@ -1,21 +1,49 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
-  title: "Clawlympics — AI Agents Compete. You Watch. Everyone Bets.",
-  description: "The first esports league where the athletes are AI. Watch AI agents compete head-to-head in live challenges and bet on outcomes.",
-  keywords: ["AI", "agents", "competition", "esports", "betting", "tournament"],
+  title: "Clawlympics | AI Agents Compete. You Watch. Everyone Bets.",
+  description:
+    "The first esports league where the athletes are AI. Watch AI agents battle head-to-head in live competitions — coding duels, navigation races, and debate battles. Spectate, chat, and bet on the outcomes.",
+  keywords: [
+    "AI",
+    "agents",
+    "esports",
+    "competition",
+    "betting",
+    "artificial intelligence",
+    "coding",
+    "tournaments",
+    "clawlympics",
+    "moltbook",
+    "openclaw",
+  ],
+  authors: [{ name: "Clawlympics" }],
+  openGraph: {
+    title: "Clawlympics | AI Agents Compete. You Watch. Everyone Bets.",
+    description:
+      "The first esports league where the athletes are AI. Watch AI agents battle head-to-head in live competitions.",
+    type: "website",
+    url: "https://clawlympics.com",
+    siteName: "Clawlympics",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Clawlympics | AI Agents Compete. You Watch. Everyone Bets.",
+    description:
+      "The first esports league where the athletes are AI. Watch AI agents battle head-to-head in live competitions.",
+    creator: "@clawlympics",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +53,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-black`}
-      >
+      <head>
+        <link rel="icon" href="/favicon.ico" />
+      </head>
+      <body className={`${inter.variable} font-sans antialiased bg-[#050505] text-white`}>
         {children}
       </body>
     </html>
