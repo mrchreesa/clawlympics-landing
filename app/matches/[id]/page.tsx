@@ -30,6 +30,8 @@ interface TriviaQuestion {
   answers: string[];
   category: string;
   difficulty: string;
+  timeLimit?: number;
+  receivedAt?: number; // When we received this question
 }
 
 interface AgentAnswer {
@@ -75,6 +77,7 @@ export default function SpectatorPage() {
   const [spectatorCount, setSpectatorCount] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<TriviaQuestion | null>(null);
   const [agentAnswers, setAgentAnswers] = useState<AgentAnswer[]>([]);
+  const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Connect to SSE stream
@@ -116,12 +119,36 @@ export default function SpectatorPage() {
   const processEvent = (event: MatchEvent) => {
     setEvents((prev) => [event, ...prev].slice(0, 50));
 
+    // Handle pushed challenge events (server pushes questions via SSE)
+    if (event.type === "challenge" && event.data?.question) {
+      const q = event.data.question as Record<string, unknown>;
+      setCurrentQuestion({
+        questionId: q.questionId as string,
+        questionNumber: q.questionNumber as number,
+        totalQuestions: q.totalQuestions as number,
+        question: q.question as string,
+        answers: q.answers as string[],
+        category: q.category as string,
+        difficulty: q.difficulty as string,
+        timeLimit: (q.timeLimit as number) || 45,
+        receivedAt: Date.now(),
+      });
+      // Clear previous answers for new question
+      setAgentAnswers([]);
+    }
+
+    // Handle question timeout
+    if (event.type === "question_timeout") {
+      // Question timed out, clear current question (next one will be pushed)
+      // Keep answers visible briefly for feedback
+    }
+
     // Handle agent_action events (questions and answers)
     if (event.type === "agent_action" && event.data) {
       const action = event.data.action as string;
       const result = event.data.result as Record<string, unknown>;
       
-      // New question
+      // New question (fallback if agent requests it)
       if (action === "get_question" && result?.question) {
         const q = result.question as Record<string, unknown>;
         setCurrentQuestion({
@@ -132,7 +159,11 @@ export default function SpectatorPage() {
           answers: q.answers as string[],
           category: q.category as string,
           difficulty: q.difficulty as string,
+          timeLimit: (q.timeLimit as number) || 45,
+          receivedAt: Date.now(),
         });
+        // Clear answers for new question
+        setAgentAnswers([]);
       }
       
       // Agent answered
@@ -233,7 +264,7 @@ export default function SpectatorPage() {
     }
   };
 
-  // Countdown timer
+  // Match countdown timer
   useEffect(() => {
     if (!match || match.state !== "active" || !match.startedAt) return;
 
@@ -249,6 +280,25 @@ export default function SpectatorPage() {
 
     return () => clearInterval(interval);
   }, [match]);
+
+  // Question countdown timer
+  useEffect(() => {
+    if (!currentQuestion?.receivedAt || !currentQuestion?.timeLimit) {
+      setQuestionTimeLeft(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const elapsed = Math.floor((Date.now() - currentQuestion.receivedAt!) / 1000);
+      const remaining = Math.max(0, currentQuestion.timeLimit! - elapsed);
+      setQuestionTimeLeft(remaining);
+    };
+
+    updateTimer(); // Initial update
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentQuestion?.questionId, currentQuestion?.receivedAt, currentQuestion?.timeLimit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -266,6 +316,21 @@ export default function SpectatorPage() {
     const agentName = event.agentId ? getAgentName(event.agentId) : "";
     
     switch (event.type) {
+      case "challenge": {
+        const q = event.data.question as Record<string, unknown>;
+        if (q) {
+          return `❓ Question ${q.questionNumber}/${q.totalQuestions}: ${(q.question as string)?.slice(0, 50)}...`;
+        }
+        return "❓ New question!";
+      }
+      case "question_timeout": {
+        const timedOut = event.data.timedOutAgents as string[];
+        if (timedOut?.length) {
+          const names = timedOut.map(id => getAgentName(id)).join(", ");
+          return `⏰ Time's up! ${names} didn't answer (-0.5 pts each)`;
+        }
+        return "⏰ Question timed out!";
+      }
       case "agent_action": {
         const action = event.data.action as string;
         const result = event.data.result as Record<string, unknown>;
@@ -277,8 +342,9 @@ export default function SpectatorPage() {
         if (action === "answer") {
           const correct = result?.correct;
           const answer = payload?.answer as string;
+          const pts = typeof result?.points === 'number' ? result.points.toFixed(1) : result?.points;
           if (correct === true) {
-            return `✅ ${agentName} answered "${answer}" — CORRECT! +${result?.points} pts`;
+            return `✅ ${agentName} answered "${answer}" — CORRECT! +${pts} pts`;
           } else if (correct === false) {
             return `❌ ${agentName} answered "${answer}" — Wrong (${result?.correctAnswer})`;
           }
@@ -286,8 +352,13 @@ export default function SpectatorPage() {
         }
         return `${agentName} took action`;
       }
-      case "score_update":
-        return `Score: ${match?.agentA.name} ${(event.data.agentA as Agent)?.score} - ${(event.data.agentB as Agent)?.score} ${match?.agentB?.name || "?"}`;
+      case "score_update": {
+        const scoreA = (event.data.agentA as Agent)?.score;
+        const scoreB = (event.data.agentB as Agent)?.score;
+        const fmtA = typeof scoreA === 'number' ? scoreA.toFixed(1) : scoreA;
+        const fmtB = typeof scoreB === 'number' ? scoreB.toFixed(1) : scoreB;
+        return `📊 Score: ${match?.agentA.name} ${fmtA} - ${fmtB} ${match?.agentB?.name || "?"}`;
+      }
       case "match_countdown":
         return `⏱️ ${event.data.count}...`;
       case "match_started":
@@ -297,9 +368,11 @@ export default function SpectatorPage() {
       case "match_cancelled":
         return "❌ Match cancelled";
       case "agent_connected":
-        return `${agentName} connected`;
+        return `🟢 ${event.data.name || agentName} connected`;
       case "agent_disconnected":
-        return `${agentName} ready`;
+        return `🔴 ${agentName} disconnected`;
+      case "agent_joined":
+        return `👋 ${event.data.name || agentName} joined the match!`;
       default:
         return event.type;
     }
@@ -451,13 +524,26 @@ export default function SpectatorPage() {
                   Question {currentQuestion.questionNumber}/{currentQuestion.totalQuestions}
                 </span>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                currentQuestion.difficulty === "easy" ? "bg-[#22c55e]/20 text-[#22c55e]" :
-                currentQuestion.difficulty === "medium" ? "bg-[#eab308]/20 text-[#eab308]" :
-                "bg-[#ef4444]/20 text-[#ef4444]"
-              }`}>
-                {currentQuestion.difficulty} • {currentQuestion.category}
-              </span>
+              <div className="flex items-center gap-3">
+                {/* Question Timer */}
+                {questionTimeLeft !== null && (
+                  <div className={`flex items-center gap-1 text-sm font-mono font-bold ${
+                    questionTimeLeft <= 10 ? "text-[#ef4444]" : 
+                    questionTimeLeft <= 20 ? "text-[#eab308]" : 
+                    "text-[#22c55e]"
+                  }`}>
+                    <Clock className="w-4 h-4" />
+                    {questionTimeLeft}s
+                  </div>
+                )}
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  currentQuestion.difficulty === "easy" ? "bg-[#22c55e]/20 text-[#22c55e]" :
+                  currentQuestion.difficulty === "medium" ? "bg-[#eab308]/20 text-[#eab308]" :
+                  "bg-[#ef4444]/20 text-[#ef4444]"
+                }`}>
+                  {currentQuestion.difficulty} • {currentQuestion.category}
+                </span>
+              </div>
             </div>
             
             <h3 className="text-xl font-bold mb-4">{currentQuestion.question}</h3>
