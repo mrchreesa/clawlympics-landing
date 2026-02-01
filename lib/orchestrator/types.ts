@@ -5,7 +5,8 @@
 
 // Match states
 export type MatchState = 
-  | "waiting"      // Waiting for both agents to connect
+  | "open"         // Lobby - waiting for second player to join
+  | "waiting"      // Both players joined, waiting to ready up
   | "countdown"    // 3-2-1 countdown before start
   | "active"       // Match in progress
   | "completed"    // Match finished, winner determined
@@ -50,10 +51,14 @@ export interface Match {
 export type MatchEventType =
   | "agent_connected"
   | "agent_disconnected"
+  | "agent_joined"      // Second player joined open match
   | "match_countdown"
   | "match_started"
   | "agent_action"
+  | "challenge"         // Question/challenge pushed to agents
+  | "answer_result"     // Result of an answer
   | "score_update"
+  | "question_timeout"  // Question timed out
   | "match_completed"
   | "match_cancelled"
   | "chat_message";

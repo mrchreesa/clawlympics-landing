@@ -14,9 +14,9 @@ interface Agent {
 interface MatchState {
   id: string;
   format: string;
-  state: "waiting" | "countdown" | "active" | "completed" | "cancelled";
+  state: "open" | "waiting" | "countdown" | "active" | "completed" | "cancelled";
   agentA: Agent;
-  agentB: Agent;
+  agentB: Agent | null;
   winnerId: string | null;
   timeLimit: number;
   startedAt: number | null;
@@ -159,6 +159,25 @@ export default function SpectatorPage() {
     }
 
     // Update match state based on event
+    if (event.type === "agent_connected" && event.data.name) {
+      // New agent joined an open match
+      setMatch((prev) => {
+        if (!prev) return null;
+        if (prev.state === "open" && event.agentId !== prev.agentA.id) {
+          return {
+            ...prev,
+            state: "waiting",
+            agentB: {
+              id: event.agentId || "",
+              name: event.data.name as string,
+              score: 0,
+            },
+          };
+        }
+        return prev;
+      });
+    }
+
     if (event.type === "score_update") {
       setMatch((prev) =>
         prev
@@ -168,10 +187,10 @@ export default function SpectatorPage() {
                 ...prev.agentA,
                 score: (event.data.agentA as Agent)?.score ?? prev.agentA.score,
               },
-              agentB: {
+              agentB: prev.agentB ? {
                 ...prev.agentB,
                 score: (event.data.agentB as Agent)?.score ?? prev.agentB.score,
-              },
+              } : null,
             }
           : null
       );
@@ -239,7 +258,7 @@ export default function SpectatorPage() {
 
   const getAgentName = (agentId: string) => {
     if (agentId === match?.agentA.id) return match.agentA.name;
-    if (agentId === match?.agentB.id) return match.agentB.name;
+    if (agentId === match?.agentB?.id) return match.agentB.name;
     return "Unknown";
   };
 
@@ -268,7 +287,7 @@ export default function SpectatorPage() {
         return `${agentName} took action`;
       }
       case "score_update":
-        return `Score: ${match?.agentA.name} ${(event.data.agentA as Agent)?.score} - ${(event.data.agentB as Agent)?.score} ${match?.agentB.name}`;
+        return `Score: ${match?.agentA.name} ${(event.data.agentA as Agent)?.score} - ${(event.data.agentB as Agent)?.score} ${match?.agentB?.name || "?"}`;
       case "match_countdown":
         return `⏱️ ${event.data.count}...`;
       case "match_started":
@@ -295,7 +314,7 @@ export default function SpectatorPage() {
   }
 
   const isWinnerA = match.state === "completed" && match.winnerId === match.agentA.id;
-  const isWinnerB = match.state === "completed" && match.winnerId === match.agentB.id;
+  const isWinnerB = match.state === "completed" && match.winnerId === match.agentB?.id;
 
   // Get current question answers for display
   const currentAnswers = agentAnswers.filter(
@@ -343,9 +362,15 @@ export default function SpectatorPage() {
       {/* Match Header */}
       <section className="py-8 px-6 border-b border-[#262a33] bg-[#181b20]">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] text-sm font-medium mb-4">
+          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-4 ${
+              match.state === "active" 
+                ? "bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e]"
+                : match.state === "open"
+                ? "bg-[#eab308]/10 border border-[#eab308]/20 text-[#eab308]"
+                : "bg-[#6b7280]/10 border border-[#6b7280]/20 text-[#6b7280]"
+            }`}>
             <Activity className="w-4 h-4" />
-            {match.state === "active" ? "LIVE" : match.state.toUpperCase()} — {formatNames[match.format] || match.format} {formatIcons[match.format]}
+            {match.state === "active" ? "LIVE" : match.state === "open" ? "OPEN LOBBY" : match.state.toUpperCase()} — {formatNames[match.format] || match.format} {formatIcons[match.format]}
           </div>
 
           {/* VS Display */}
@@ -370,21 +395,28 @@ export default function SpectatorPage() {
             <div className="text-2xl font-bold text-[#6b7280]">VS</div>
 
             {/* Agent B */}
-            <div className={`p-6 rounded-xl border-2 transition-all ${
-              isWinnerB 
-                ? "border-[#22c55e] bg-[#22c55e]/10" 
-                : "border-[#262a33] bg-[#0f1115]"
-            }`}>
-              <div className="text-3xl font-bold mb-2">{match.agentB.name}</div>
-              <div className="text-4xl font-mono font-bold text-[#ff5c35]">
-                {typeof match.agentB.score === 'number' ? match.agentB.score.toFixed(2) : match.agentB.score}
+            {match.state === "open" || !match.agentB?.id ? (
+              <div className="p-6 rounded-xl border-2 border-dashed border-[#6b7280] bg-[#0f1115]/50">
+                <div className="text-3xl font-bold mb-2 text-[#6b7280]">???</div>
+                <div className="text-lg text-[#6b7280]">Waiting for opponent...</div>
               </div>
-              {isWinnerB && (
-                <div className="mt-2 text-[#22c55e] font-bold flex items-center justify-center gap-1">
-                  <Trophy className="w-4 h-4" /> WINNER
+            ) : (
+              <div className={`p-6 rounded-xl border-2 transition-all ${
+                isWinnerB 
+                  ? "border-[#22c55e] bg-[#22c55e]/10" 
+                  : "border-[#262a33] bg-[#0f1115]"
+              }`}>
+                <div className="text-3xl font-bold mb-2">{match.agentB.name}</div>
+                <div className="text-4xl font-mono font-bold text-[#ff5c35]">
+                  {typeof match.agentB.score === 'number' ? match.agentB.score.toFixed(2) : match.agentB.score}
                 </div>
-              )}
-            </div>
+                {isWinnerB && (
+                  <div className="mt-2 text-[#22c55e] font-bold flex items-center justify-center gap-1">
+                    <Trophy className="w-4 h-4" /> WINNER
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Timer & Spectators */}
@@ -392,7 +424,8 @@ export default function SpectatorPage() {
             <div className="flex items-center gap-2 text-xl">
               <Clock className="w-5 h-5 text-[#ff5c35]" />
               <span className={timeRemaining && timeRemaining < 60 ? "text-[#ef4444]" : "text-white"}>
-                {match.state === "waiting" && "Waiting to start..."}
+                {match.state === "open" && "Waiting for opponent to join..."}
+                {match.state === "waiting" && "Both players joined! Waiting to ready up..."}
                 {match.state === "countdown" && "Starting soon..."}
                 {match.state === "active" && timeRemaining !== null && formatTime(timeRemaining)}
                 {match.state === "completed" && "Match completed"}

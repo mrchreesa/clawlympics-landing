@@ -38,9 +38,10 @@ function dbToMatch(row: Record<string, unknown>): Match {
       lastAction: Date.now(),
     },
     agentB: {
-      id: row.agent_b_id as string,
-      name: row.agent_b_name as string,
-      status: row.agent_b_status as AgentStatus,
+      // Agent B can be null for open matches
+      id: (row.agent_b_id as string) || "",
+      name: (row.agent_b_name as string) || "Waiting for opponent...",
+      status: (row.agent_b_status as AgentStatus) || "disconnected",
       score: Number(row.agent_b_score) || 0,
       lastAction: Date.now(),
     },
@@ -55,7 +56,7 @@ function dbToMatch(row: Record<string, unknown>): Match {
 }
 
 /**
- * Create a new match
+ * Create a new match with both players known
  */
 export async function createMatch(
   format: GameFormat,
@@ -102,6 +103,131 @@ export async function createMatch(
   matchCache.set(match.id, { match, timestamp: Date.now() });
 
   return match;
+}
+
+/**
+ * Create an open match (lobby) - only one player, waiting for opponent
+ */
+export async function createOpenMatch(
+  format: GameFormat,
+  creatorId: string,
+  creatorName: string,
+  timeLimit: number = 600
+): Promise<Match> {
+  const supabase = getSupabaseAdmin();
+  const id = randomUUID();
+
+  const matchData = {
+    id,
+    format,
+    state: "open", // New state: waiting for second player
+    agent_a_id: creatorId,
+    agent_a_name: creatorName,
+    agent_a_score: 0,
+    agent_a_status: "connected", // Creator is connected
+    agent_b_id: null, // No opponent yet
+    agent_b_name: null,
+    agent_b_score: 0,
+    agent_b_status: "disconnected",
+    time_limit: timeLimit,
+    events: [],
+    game_state: {},
+    spectator_count: 0,
+  };
+
+  const { data, error } = await supabase
+    .from("live_matches")
+    .insert(matchData)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating open match:", error);
+    throw new Error("Failed to create match");
+  }
+
+  const match = dbToMatch(data);
+  matchSubscribers.set(match.id, new Set());
+  matchCache.set(match.id, { match, timestamp: Date.now() });
+
+  return match;
+}
+
+/**
+ * Join an open match as the second player
+ */
+export async function joinOpenMatch(
+  matchId: string,
+  joinerId: string,
+  joinerName: string
+): Promise<Match | null> {
+  const match = await getMatch(matchId);
+  if (!match) return null;
+
+  // Can only join open matches
+  if (match.state !== "open") {
+    throw new Error("Match is not open for joining");
+  }
+
+  // Can't join your own match
+  if (match.agentA.id === joinerId) {
+    throw new Error("You created this match - wait for an opponent");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("live_matches")
+    .update({
+      agent_b_id: joinerId,
+      agent_b_name: joinerName,
+      agent_b_status: "connected",
+      state: "waiting", // Now waiting for both to ready up
+    })
+    .eq("id", matchId)
+    .eq("state", "open") // Ensure still open (prevent race)
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error("Error joining match:", error);
+    return null;
+  }
+
+  const updatedMatch = dbToMatch(data);
+  matchCache.set(matchId, { match: updatedMatch, timestamp: Date.now() });
+
+  // Emit event
+  await emitEvent(matchId, {
+    id: randomUUID(),
+    type: "agent_connected",
+    timestamp: Date.now(),
+    agentId: joinerId,
+    data: { 
+      status: "connected",
+      name: joinerName,
+      message: `${joinerName} joined the match!`,
+    },
+  });
+
+  return updatedMatch;
+}
+
+/**
+ * Get all open matches (lobby)
+ */
+export async function getOpenMatches(): Promise<Match[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("live_matches")
+    .select("*")
+    .eq("state", "open")
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data.map(dbToMatch);
 }
 
 /**
@@ -152,7 +278,7 @@ export async function getActiveMatches(): Promise<Match[]> {
   const { data, error } = await supabase
     .from("live_matches")
     .select("*")
-    .in("state", ["waiting", "countdown", "active"])
+    .in("state", ["open", "waiting", "countdown", "active"])
     .order("created_at", { ascending: false });
 
   if (error || !data) {
@@ -439,7 +565,7 @@ export function subscribeToMatch(
 /**
  * Emit an event to all subscribers and store in DB
  */
-async function emitEvent(matchId: string, event: MatchEvent): Promise<void> {
+export async function emitEvent(matchId: string, event: MatchEvent): Promise<void> {
   // Get current events and append
   const match = await getMatch(matchId);
   if (match) {
