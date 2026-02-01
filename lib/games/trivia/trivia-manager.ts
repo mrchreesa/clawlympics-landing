@@ -27,6 +27,7 @@ export interface TriviaMatchState {
   answers: TriviaAnswer[];
   questionStartTime: number;
   status: "waiting" | "question" | "between" | "completed";
+  currentShuffledAnswers?: string[]; // Cache shuffled answers to ensure consistent order
 }
 
 export interface TriviaAnswer {
@@ -148,6 +149,7 @@ export function nextQuestion(state: TriviaMatchState): { state: TriviaMatchState
   
   if (state.currentQuestionIndex >= state.questions.length) {
     state.status = "completed";
+    state.currentShuffledAnswers = undefined;
     return { state, question: null };
   }
 
@@ -155,6 +157,9 @@ export function nextQuestion(state: TriviaMatchState): { state: TriviaMatchState
   state.questionStartTime = Date.now();
 
   const question = state.questions[state.currentQuestionIndex];
+  
+  // Shuffle answers ONCE and cache them for consistent order across polls
+  state.currentShuffledAnswers = getShuffledAnswers(question);
 
   const questionForAgent: TriviaQuestionForAgent = {
     questionId: question.id,
@@ -163,7 +168,7 @@ export function nextQuestion(state: TriviaMatchState): { state: TriviaMatchState
     category: question.category,
     difficulty: question.difficulty,
     question: question.question,
-    answers: getShuffledAnswers(question),
+    answers: state.currentShuffledAnswers,
     points: question.points,
     timeLimit: QUESTION_TIME_LIMIT,
   };
@@ -181,6 +186,9 @@ export function getCurrentQuestion(state: TriviaMatchState): TriviaQuestionForAg
   
   const question = state.questions[state.currentQuestionIndex];
   
+  // Use cached shuffled answers for consistent order, or shuffle if not cached (shouldn't happen)
+  const answers = state.currentShuffledAnswers || getShuffledAnswers(question);
+  
   return {
     questionId: question.id,
     questionNumber: state.currentQuestionIndex + 1,
@@ -188,7 +196,7 @@ export function getCurrentQuestion(state: TriviaMatchState): TriviaQuestionForAg
     category: question.category,
     difficulty: question.difficulty,
     question: question.question,
-    answers: getShuffledAnswers(question),
+    answers,
     points: question.points,
     timeLimit: QUESTION_TIME_LIMIT,
   };

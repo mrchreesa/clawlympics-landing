@@ -23,12 +23,12 @@ export function ClawlympicsAnimation() {
     })), []
   );
 
-  // Orbiting agents data
+  // Orbiting agents data - sea creatures
   const orbitingAgents = useMemo(() => [
-    { label: 'A', color: '#3b82f6', delay: 0, duration: 8, radius: 135, direction: 1 },
-    { label: 'B', color: '#22c55e', delay: 2, duration: 10, radius: 145, direction: -1 },
-    { label: 'C', color: '#ef4444', delay: 1, duration: 12, radius: 125, direction: 1 },
-    { label: 'D', color: '#eab308', delay: 3, duration: 6, radius: 155, direction: -1 },
+    { icon: '🦞', color: '#ff5c35', delay: 0, duration: 8, radius: 135, direction: 1 },
+    { icon: '🦀', color: '#eab308', delay: 2, duration: 10, radius: 145, direction: -1 },
+    { icon: '🐙', color: '#a855f7', delay: 1, duration: 12, radius: 125, direction: 1 },
+    { icon: '🦐', color: '#f97316', delay: 3, duration: 6, radius: 155, direction: -1 },
   ], []);
 
   if (!mounted) return null;
@@ -69,7 +69,7 @@ export function ClawlympicsAnimation() {
       <div className="absolute inset-0 flex items-center justify-center">
         {/* Left Side - Lobster Claw */}
         <div 
-          className="absolute left-[5%] md:left-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
+          className="absolute z-20 left-[5%] md:left-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
           style={{ animation: 'lobsterAttack 3s ease-in-out infinite' }}
         >
           <div className="relative">
@@ -82,7 +82,7 @@ export function ClawlympicsAnimation() {
               }}
             />
             <Image
-              src="/lobster-claw.png"
+              src="/lobster-claw1.png"
               alt="Lobster Claw"
               width={200}
               height={200}
@@ -98,7 +98,7 @@ export function ClawlympicsAnimation() {
 
         {/* Right Side - Crab Claw */}
         <div 
-          className="absolute right-[5%] md:right-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
+          className="absolute z-20 right-[5%] md:right-[10%] top-1/2 -translate-y-1/2 w-32 md:w-40 lg:w-48"
           style={{ animation: 'crabAttack 3s ease-in-out infinite' }}
         >
           <div className="relative">
@@ -111,7 +111,7 @@ export function ClawlympicsAnimation() {
               }}
             />
             <Image
-              src="/crab-claw.png"
+              src="/crab-claw1.png"
               alt="Crab Claw"
               width={200}
               height={200}
@@ -126,7 +126,7 @@ export function ClawlympicsAnimation() {
         </div>
 
         {/* Center VS Badge and Effects */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
           <svg
             viewBox="0 0 400 400"
             className="w-full h-full max-w-md max-h-md"
@@ -178,43 +178,34 @@ export function ClawlympicsAnimation() {
             </g>
 
             {/* Orbiting AI Agents */}
-            {orbitingAgents.map((agent) => (
+            {orbitingAgents.map((agent, index) => (
               <g 
-                key={agent.label}
+                key={index}
                 style={{ 
                   transformOrigin: '200px 200px',
                   animation: `${agent.direction === 1 ? 'orbitAgent' : 'orbitAgentReverse'} ${agent.duration}s linear infinite`,
-                  animationDelay: `${agent.delay}s`
+                  animationDelay: `${agent.delay}s`,
+                  zIndex: 0
                 }}
                 filter="url(#agentGlow)"
               >
-                {/* Agent trail */}
+                {/* Agent glow circle */}
                 <circle 
                   cx={200 + agent.radius} 
                   cy="200" 
-                  r="5" 
+                  r="16" 
                   fill={agent.color}
                   opacity="0.3"
                 />
-                {/* Agent body */}
-                <circle 
-                  cx={200 + agent.radius} 
-                  cy="200" 
-                  r="8" 
-                  fill={agent.color}
-                  stroke="rgba(255,255,255,0.3)"
-                  strokeWidth="1"
-                />
-                {/* Agent label */}
+                {/* Agent icon */}
                 <text 
                   x={200 + agent.radius} 
-                  y="204" 
+                  y="206" 
                   textAnchor="middle" 
-                  fill="#fff" 
-                  fontSize="8" 
-                  fontWeight="bold"
+                  fontSize="18" 
+                  style={{ filter: 'drop-shadow(0 0 4px rgba(0,0,0,0.8))' }}
                 >
-                  {agent.label}
+                  {agent.icon}
                 </text>
               </g>
             ))}

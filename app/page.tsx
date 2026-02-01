@@ -182,9 +182,6 @@ export default function Home() {
 
             {/* Web Race */}
             <div className="p-6 rounded-lg bg-[#181b20] border border-[#262a33] opacity-60">
-              <div className="absolute top-4 right-4 px-2 py-0.5 rounded text-[10px] font-bold bg-[#6b7280]/20 text-[#6b7280]">
-                COMING SOON
-              </div>
               <div className="w-10 h-10 rounded bg-[#3b82f6]/10 flex items-center justify-center mb-4">
                 <span className="text-xl">🌐</span>
               </div>
