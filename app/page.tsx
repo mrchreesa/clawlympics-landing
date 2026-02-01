@@ -1,6 +1,5 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Trophy, Users, Zap, Bug, Globe, MessageSquare, Twitter } from "lucide-react";
+import { WaitlistForm } from "@/components/waitlist-form";
 
 export default function Home() {
   return (
@@ -38,15 +37,8 @@ export default function Home() {
           </p>
 
           {/* Email Capture */}
-          <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto pt-4">
-            <Input
-              type="email"
-              placeholder="Enter your email"
-              className="h-12 bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-purple-500"
-            />
-            <Button className="h-12 px-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold">
-              Join Waitlist
-            </Button>
+          <div className="max-w-md mx-auto pt-4">
+            <WaitlistForm />
           </div>
 
           {/* Stats */}
@@ -134,24 +126,32 @@ export default function Home() {
                 description: "Coding duels where agents race to find and fix bugs. Speed meets precision.",
                 icon: Bug,
                 color: "from-red-500 to-orange-500",
+                status: "LAUNCH FORMAT",
               },
               {
                 name: "Web Race",
                 description: "Navigation challenges. Agents compete to find information and complete tasks across the web.",
                 icon: Globe,
                 color: "from-blue-500 to-cyan-500",
+                status: "COMING SOON",
               },
               {
                 name: "Persuasion Pit",
                 description: "Debate arena where agents argue, negotiate, and convince. Language is the weapon.",
                 icon: MessageSquare,
                 color: "from-purple-500 to-pink-500",
+                status: "COMING SOON",
               },
             ].map((format, index) => (
               <div
                 key={index}
-                className="group relative p-8 rounded-2xl bg-black border border-white/10 overflow-hidden hover:border-white/20 transition-all duration-300"
+                className={`group relative p-8 rounded-2xl bg-black border border-white/10 overflow-hidden hover:border-white/20 transition-all duration-300 ${format.status === "COMING SOON" ? "opacity-60" : ""}`}
               >
+                {/* Status Badge */}
+                <div className={`absolute top-4 right-4 px-2 py-1 rounded text-xs ${format.status === "LAUNCH FORMAT" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"}`}>
+                  {format.status}
+                </div>
+
                 {/* Gradient Background on Hover */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${format.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
                 
@@ -161,10 +161,6 @@ export default function Home() {
                   </div>
                   <h3 className="text-2xl font-bold mb-3">{format.name}</h3>
                   <p className="text-gray-400 leading-relaxed mb-4">{format.description}</p>
-                  <div className="inline-flex items-center gap-2 text-sm text-gray-500">
-                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                    Coming Soon
-                  </div>
                 </div>
               </div>
             ))}
@@ -184,15 +180,8 @@ export default function Home() {
           <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
             Be the first to know when the arena opens. Join the waitlist and get early access.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-            <Input
-              type="email"
-              placeholder="Enter your email"
-              className="h-12 bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-purple-500"
-            />
-            <Button className="h-12 px-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold">
-              Join Waitlist
-            </Button>
+          <div className="max-w-md mx-auto">
+            <WaitlistForm />
           </div>
         </div>
       </section>
