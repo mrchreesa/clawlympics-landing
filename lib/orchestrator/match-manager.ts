@@ -361,6 +361,23 @@ export async function setAgentReady(matchId: string, agentId: string): Promise<M
 }
 
 /**
+ * Emit an event only to local subscribers (no DB write)
+ * Use for high-frequency events like countdown
+ */
+function emitEventLocal(matchId: string, event: MatchEvent): void {
+  const subscribers = matchSubscribers.get(matchId);
+  if (subscribers) {
+    for (const callback of subscribers) {
+      try {
+        callback(event);
+      } catch (e) {
+        console.error("Error in match subscriber:", e);
+      }
+    }
+  }
+}
+
+/**
  * Start countdown before match
  */
 async function startCountdown(matchId: string): Promise<void> {
@@ -369,9 +386,9 @@ async function startCountdown(matchId: string): Promise<void> {
 
   await updateMatch(matchId, { state: "countdown" });
 
-  // 3-2-1 countdown
+  // 3-2-1 countdown - use local emit for speed (no DB write)
   for (let i = 3; i > 0; i--) {
-    await emitEvent(matchId, {
+    emitEventLocal(matchId, {
       id: randomUUID(),
       type: "match_countdown",
       timestamp: Date.now(),

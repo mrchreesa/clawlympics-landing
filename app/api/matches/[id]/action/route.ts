@@ -17,6 +17,8 @@ import {
   getFinalResults,
   getTimeRemaining,
   advanceToNextQuestion,
+  isQuestionTimedOut,
+  handleQuestionTimeout,
   type TriviaMatchState,
 } from "@/lib/games/trivia";
 import { updateGameState } from "@/lib/orchestrator/match-manager";
@@ -253,6 +255,30 @@ async function processTriviaAction(
   if (!triviaState) {
     triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
     await updateGameState(match.id, wrapTriviaState(triviaState));
+  }
+
+  // Check for question timeout before processing action
+  if (isQuestionTimedOut(triviaState)) {
+    const agentIds = [match.agentA.id, match.agentB.id];
+    const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
+    triviaState = newState;
+    
+    // Update scores for timed out agents
+    for (const timedOutId of timedOutAgents) {
+      await updateScore(match.id, timedOutId, triviaState.scores[timedOutId] || 0);
+    }
+    
+    // Persist state
+    await updateGameState(match.id, wrapTriviaState(triviaState));
+    
+    // If current agent timed out, notify them
+    if (timedOutAgents.includes(agentId)) {
+      return {
+        status: "timeout",
+        message: "Time's up! -0.5 points penalty. Get next question with action: 'get_question'",
+        yourScore: triviaState.scores[agentId],
+      };
+    }
   }
 
   switch (action) {

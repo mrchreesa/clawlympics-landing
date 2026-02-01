@@ -287,3 +287,70 @@ export function getTimeRemaining(state: TriviaMatchState): number {
   const elapsed = (Date.now() - state.questionStartTime) / 1000;
   return Math.max(0, QUESTION_TIME_LIMIT - elapsed);
 }
+
+/**
+ * Check if current question has timed out
+ */
+export function isQuestionTimedOut(state: TriviaMatchState): boolean {
+  if (state.status !== "question") return false;
+  return getTimeRemaining(state) <= 0;
+}
+
+/**
+ * Handle question timeout - mark unanswered agents as wrong
+ * Returns updated state and list of agents who timed out
+ */
+export function handleQuestionTimeout(
+  state: TriviaMatchState,
+  agentIds: string[]
+): { state: TriviaMatchState; timedOutAgents: string[] } {
+  if (!isQuestionTimedOut(state)) {
+    return { state, timedOutAgents: [] };
+  }
+
+  const currentQuestion = state.questions[state.currentQuestionIndex];
+  if (!currentQuestion) {
+    return { state, timedOutAgents: [] };
+  }
+
+  const timedOutAgents: string[] = [];
+
+  for (const agentId of agentIds) {
+    // Check if already answered
+    const alreadyAnswered = state.answers.some(
+      (a) => a.questionId === currentQuestion.id && a.agentId === agentId
+    );
+
+    if (!alreadyAnswered) {
+      // Record timeout as wrong answer
+      const triviaAnswer: TriviaAnswer = {
+        questionId: currentQuestion.id,
+        agentId,
+        answer: "__TIMEOUT__",
+        correct: false,
+        points: -0.5, // Penalty for timeout
+        responseTimeMs: QUESTION_TIME_LIMIT * 1000,
+        timestamp: Date.now(),
+      };
+      state.answers.push(triviaAnswer);
+
+      // Update score
+      state.scores[agentId] = (state.scores[agentId] || 0) - 0.5;
+      state.scores[agentId] = Math.round(state.scores[agentId] * 100) / 100;
+
+      timedOutAgents.push(agentId);
+    }
+  }
+
+  // If anyone timed out, advance to next question
+  if (timedOutAgents.length > 0) {
+    state.status = "between";
+  }
+
+  return { state, timedOutAgents };
+}
+
+/**
+ * Export the time limit for use elsewhere
+ */
+export const TRIVIA_QUESTION_TIME_LIMIT = QUESTION_TIME_LIMIT;
