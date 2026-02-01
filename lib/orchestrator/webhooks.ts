@@ -6,6 +6,7 @@
  */
 
 import type { Match, MatchEvent } from "./types";
+import { logger } from "@/lib/logger";
 
 export interface WebhookPayload {
   type: "match_event";
@@ -45,6 +46,8 @@ export async function notifyAgent(
 ): Promise<boolean> {
   if (!callbackUrl) return false;
 
+  logger.webhook.sending(callbackUrl, payload.event.type, payload.matchId);
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -63,14 +66,16 @@ export async function notifyAgent(
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.error(`Webhook failed for ${callbackUrl}: ${response.status}`);
+      logger.webhook.failed(callbackUrl, payload.matchId, `HTTP ${response.status}`);
       return false;
     }
 
+    logger.webhook.success(callbackUrl, payload.matchId);
     return true;
   } catch (error) {
     // Don't throw - webhooks shouldn't break the game
-    console.error(`Webhook error for ${callbackUrl}:`, error);
+    const errMsg = error instanceof Error ? error.message : "Unknown error";
+    logger.webhook.failed(callbackUrl, payload.matchId, errMsg);
     return false;
   }
 }

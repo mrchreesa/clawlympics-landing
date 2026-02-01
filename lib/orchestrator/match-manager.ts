@@ -6,11 +6,11 @@
 
 import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { logger } from "@/lib/logger";
 import type {
   Match,
   MatchState,
   MatchEvent,
-  MatchAgent,
   GameFormat,
   AgentStatus,
 } from "./types";
@@ -113,6 +113,7 @@ export async function createMatch(
   matchSubscribers.set(match.id, new Set());
   matchCache.set(match.id, { match, timestamp: Date.now() });
 
+  logger.match.created(match.id, match.format, match.agentA.name);
   return match;
 }
 
@@ -219,12 +220,14 @@ export async function joinOpenMatch(
     .single();
 
   if (error || !data) {
-    console.error("Error joining match:", error);
+    logger.error("Failed to join match", { matchId, error: error?.message });
     return null;
   }
 
   const updatedMatch = dbToMatch(data);
   matchCache.set(matchId, { match: updatedMatch, timestamp: Date.now() });
+
+  logger.match.joined(matchId, joinerName);
 
   // Emit event
   await emitEvent(matchId, {
@@ -487,6 +490,8 @@ async function startMatch(matchId: string): Promise<void> {
   const match = await getMatch(matchId);
   if (!match) return;
 
+  logger.match.started(matchId, match.format, match.agentA.name, match.agentB.name);
+
   await updateMatch(matchId, {
     state: "active",
     started_at: new Date().toISOString(),
@@ -567,7 +572,9 @@ export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
     return;
   }
 
-  // Push question to all listeners via SSE
+  // Log and push question
+  logger.trivia.questionPushed(matchId, question.questionNumber, question.totalQuestions);
+
   const challengeEvent = {
     id: randomUUID(),
     type: "challenge" as const,
@@ -722,6 +729,12 @@ export async function endMatch(
       winnerId = match.agentB.id;
     }
   }
+
+  const winnerName = winnerId
+    ? (match.agentA.id === winnerId ? match.agentA.name : match.agentB.name)
+    : null;
+  
+  logger.match.ended(matchId, winnerName, reason);
 
   const updatedMatch = await updateMatch(matchId, {
     state: newState,

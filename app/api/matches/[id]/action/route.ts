@@ -8,21 +8,18 @@ import {
   pushNextTriviaQuestion,
 } from "@/lib/orchestrator/match-manager";
 import {
-  initTrivia,
   parseTriviaState,
   wrapTriviaState,
-  nextQuestion,
   getCurrentQuestion,
   submitAnswer,
   allAnswered,
   getFinalResults,
-  getTimeRemaining,
   advanceToNextQuestion,
   isQuestionTimedOut,
   handleQuestionTimeout,
-  type TriviaMatchState,
 } from "@/lib/games/trivia";
 import { updateGameState } from "@/lib/orchestrator/match-manager";
+import { logger } from "@/lib/logger";
 
 // POST /api/matches/[id]/action - Agent submits an action
 export async function POST(
@@ -263,13 +260,14 @@ async function processTriviaAction(
 ): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
+  const agentName = match.agentA.id === agentId ? match.agentA.name : match.agentB.name;
+
   // Load trivia state from match.gameState (persisted in Supabase)
   let triviaState = parseTriviaState(match.gameState);
   
-  // Initialize if needed
   if (!triviaState) {
-    triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
-    await updateGameState(match.id, wrapTriviaState(triviaState));
+    logger.warn("No trivia state found", { matchId: match.id, agentName });
+    return { error: "Match not properly initialized. Wait for question to be pushed." };
   }
 
   // Check for question timeout before processing action
@@ -277,6 +275,14 @@ async function processTriviaAction(
     const agentIds = [match.agentA.id, match.agentB.id];
     const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
     triviaState = newState;
+    
+    // Log timeout
+    if (timedOutAgents.length > 0) {
+      const timedOutNames = timedOutAgents.map(id => 
+        id === match.agentA.id ? match.agentA.name : match.agentB.name
+      );
+      logger.trivia.timeout(match.id, timedOutNames);
+    }
     
     // Update scores for timed out agents
     for (const timedOutId of timedOutAgents) {
@@ -290,7 +296,7 @@ async function processTriviaAction(
     if (timedOutAgents.includes(agentId)) {
       return {
         status: "timeout",
-        message: "Time's up! -0.5 points penalty. Get next question with action: 'get_question'",
+        message: "Time's up! -0.5 points penalty. Wait for next question via webhook.",
         yourScore: triviaState.scores[agentId],
       };
     }
@@ -298,47 +304,32 @@ async function processTriviaAction(
 
   switch (action) {
     case "get_question": {
-      // Get current or next question
-      if (triviaState.status === "waiting" || triviaState.status === "between") {
-        const { state: newState, question } = nextQuestion(triviaState);
-        triviaState = newState;
-        
-        // Persist state
-        await updateGameState(match.id, wrapTriviaState(triviaState));
-        
-        if (!question) {
-          // No more questions, end match
-          const results = getFinalResults(triviaState);
-          if (results) {
-            await updateScore(match.id, match.agentA.id, results.scores[match.agentA.id] || 0);
-            await updateScore(match.id, match.agentB.id, results.scores[match.agentB.id] || 0);
-            await endMatch(match.id, "completed", results.winnerId || undefined);
-          }
-          return {
-            status: "completed",
-            message: "All questions answered! Match complete.",
-            finalScores: results?.scores,
-            winnerId: results?.winnerId,
-          };
-        }
-        return {
-          status: "question",
-          question,
-          timeRemaining: 15,
-        };
-      }
-
-      // Already on a question - return current without advancing
+      // Return current question (questions are pushed via webhook, this is just for polling fallback)
       const currentQuestion = getCurrentQuestion(triviaState);
       if (currentQuestion) {
+        logger.debug("Agent polled for question", { matchId: match.id, agentName });
         return {
           status: "question",
           question: currentQuestion,
-          timeRemaining: getTimeRemaining(triviaState),
+          timeRemaining: Math.max(0, 30 - Math.floor((Date.now() - triviaState.questionStartTime) / 1000)),
         };
       }
 
-      return { error: "No current question" };
+      // No current question - match might be between questions or completed
+      if (triviaState.status === "completed") {
+        const results = getFinalResults(triviaState);
+        return {
+          status: "completed",
+          message: "All questions answered! Match complete.",
+          finalScores: results?.scores,
+          winnerId: results?.winnerId,
+        };
+      }
+
+      return { 
+        status: "waiting",
+        message: "Waiting for next question. It will be pushed via webhook.",
+      };
     }
 
     case "answer": {
@@ -346,6 +337,7 @@ async function processTriviaAction(
       const questionId = payload.question_id as string;
 
       if (!answer || !questionId) {
+        logger.warn("Invalid answer submission", { matchId: match.id, agentName, answer, questionId });
         return { error: "Missing answer or question_id" };
       }
 
@@ -354,25 +346,31 @@ async function processTriviaAction(
 
       if (!result.accepted) {
         if (result.alreadyAnswered) {
+          logger.warn("Duplicate answer attempt", { matchId: match.id, agentName });
           return { error: "You already answered this question" };
         }
         if (result.wrongQuestion) {
+          logger.warn("Wrong question ID", { matchId: match.id, agentName, submittedId: questionId, currentId: result.currentQuestionId });
           return { 
             error: "Question expired or invalid ID",
             your_question_id: questionId,
             current_question_id: result.currentQuestionId || null,
-            hint: "The question may have timed out. Call get_question for the current question.",
+            hint: "The question may have timed out. Wait for next question via webhook.",
             serverTime: Date.now(),
           };
         }
         return { error: "Failed to submit answer" };
       }
 
+      // Log the answer
+      logger.trivia.answerReceived(match.id, agentName, answer, result.correct || false, result.points || 0);
+
       // Check if both agents answered
       const bothAnswered = allAnswered(triviaState, [match.agentA.id, match.agentB.id]);
 
       // If both answered, advance to next question
       if (bothAnswered) {
+        logger.trivia.bothAnswered(match.id);
         triviaState = advanceToNextQuestion(triviaState);
       }
 
@@ -383,9 +381,8 @@ async function processTriviaAction(
       await updateScore(match.id, match.agentA.id, triviaState.scores[match.agentA.id] || 0);
       await updateScore(match.id, match.agentB.id, triviaState.scores[match.agentB.id] || 0);
 
-      // If both answered, push next question via SSE (async, don't wait)
+      // If both answered, push next question via webhook + SSE
       if (bothAnswered) {
-        // Small delay to let answer_result events propagate first
         setTimeout(() => pushNextTriviaQuestion(match.id), 500);
       }
 
