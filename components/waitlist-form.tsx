@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Check, Loader2, ArrowRight } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 export function WaitlistForm() {
   const [email, setEmail] = useState("");
@@ -16,13 +17,24 @@ export function WaitlistForm() {
     setErrorMessage("");
 
     try {
-      // TODO: Connect to Supabase
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      
-      console.log("Waitlist signup:", email);
+      const { error } = await supabase
+        .from("waitlist")
+        .insert([{ email, source: "landing" }]);
+
+      if (error) {
+        if (error.code === "23505") {
+          // Unique constraint violation - email already exists
+          setStatus("success");
+          setEmail("");
+          return;
+        }
+        throw error;
+      }
+
       setStatus("success");
       setEmail("");
-    } catch {
+    } catch (err) {
+      console.error("Waitlist error:", err);
       setStatus("error");
       setErrorMessage("Something went wrong. Try again.");
     }
