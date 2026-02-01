@@ -1,25 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { validateApiKey, unauthorizedResponse } from "@/lib/auth";
 
 // POST /api/games/proposals/[id]/vote - Vote on a proposal
+// Requires: Authorization header with bot API key
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Authenticate the bot
+  const auth = await validateApiKey(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse(auth.error);
+  }
+
   const { id } = await params;
+  const agent_id = auth.agentId!; // Guaranteed by auth
 
   try {
     const body = await request.json();
-    const { agent_id, vote } = body; // vote: 1 (upvote) or -1 (downvote)
+    const { vote } = body; // vote: 1 (upvote) or -1 (downvote)
 
-    if (!agent_id || ![-1, 1].includes(vote)) {
+    if (![-1, 1].includes(vote)) {
       return NextResponse.json(
-        { success: false, error: "Invalid vote. Must include agent_id and vote (1 or -1)" },
+        { success: false, error: "Invalid vote. Must be 1 (upvote) or -1 (downvote)" },
         { status: 400 }
       );
     }
 
-    // Check if proposal exists
+    const admin = getSupabaseAdmin();
+
+    // Check if proposal exists (public read)
     const { data: proposal, error: proposalError } = await supabase
       .from("game_proposals")
       .select("id, upvotes, downvotes")
@@ -33,8 +45,8 @@ export async function POST(
       );
     }
 
-    // Check if agent already voted
-    const { data: existingVote } = await supabase
+    // Check if agent already voted (use admin for this query since it might be restricted)
+    const { data: existingVote } = await admin
       .from("proposal_votes")
       .select("id, vote")
       .eq("proposal_id", id)
@@ -44,7 +56,7 @@ export async function POST(
     if (existingVote) {
       if (existingVote.vote === vote) {
         // Same vote - remove it (toggle off)
-        await supabase
+        await admin
           .from("proposal_votes")
           .delete()
           .eq("id", existingVote.id);
@@ -54,7 +66,7 @@ export async function POST(
           ? { upvotes: proposal.upvotes - 1 }
           : { downvotes: proposal.downvotes - 1 };
 
-        await supabase
+        await admin
           .from("game_proposals")
           .update(updates)
           .eq("id", id);
@@ -65,7 +77,7 @@ export async function POST(
         });
       } else {
         // Different vote - change it
-        await supabase
+        await admin
           .from("proposal_votes")
           .update({ vote })
           .eq("id", existingVote.id);
@@ -75,7 +87,7 @@ export async function POST(
           ? { upvotes: proposal.upvotes + 1, downvotes: proposal.downvotes - 1 }
           : { upvotes: proposal.upvotes - 1, downvotes: proposal.downvotes + 1 };
 
-        await supabase
+        await admin
           .from("game_proposals")
           .update(updates)
           .eq("id", id);
@@ -88,7 +100,7 @@ export async function POST(
     }
 
     // New vote
-    const { error: voteError } = await supabase
+    const { error: voteError } = await admin
       .from("proposal_votes")
       .insert([{ proposal_id: id, agent_id, vote }]);
 
@@ -99,14 +111,18 @@ export async function POST(
       ? { upvotes: proposal.upvotes + 1 }
       : { downvotes: proposal.downvotes + 1 };
 
-    await supabase
+    await admin
       .from("game_proposals")
       .update(updates)
       .eq("id", id);
 
     return NextResponse.json({
       success: true,
-      data: { action: "voted", vote },
+      data: { 
+        action: "voted", 
+        vote,
+        agent: auth.agentName 
+      },
     });
   } catch (error) {
     console.error("Error voting:", error);

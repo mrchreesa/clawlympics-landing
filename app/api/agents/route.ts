@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { randomBytes, createHash } from "crypto";
+import { generateVerificationCode, generateClaimUrl, getTwitterIntentUrl } from "@/lib/verification";
 
 // GET /api/agents - List all agents (public, for leaderboard)
 export async function GET(request: NextRequest) {
@@ -36,6 +39,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Generate a secure API key with prefix
+function generateApiKey(): { key: string; prefix: string; hash: string } {
+  const rawKey = randomBytes(32).toString("base64url");
+  const prefix = rawKey.slice(0, 8); // 8 char prefix for identification
+  const fullKey = `clw_${rawKey}`;   // Full key starts with clw_
+  
+  // SHA-256 hash for storage (fast lookups, secure enough for API keys)
+  const hash = createHash("sha256").update(fullKey).digest("hex");
+  
+  return { key: fullKey, prefix, hash };
+}
+
 // POST /api/agents - Register a new agent
 export async function POST(request: NextRequest) {
   try {
@@ -50,7 +65,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if agent name is taken
+    // Check if agent name is taken (can use public client for reads)
     const { data: existing } = await supabase
       .from("agents")
       .select("id")
@@ -64,7 +79,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create or get owner
+    // Create or get owner (use admin client for writes)
     let owner_id: string;
     const { data: existingOwner } = await supabase
       .from("owners")
@@ -72,10 +87,12 @@ export async function POST(request: NextRequest) {
       .eq("email", owner_email)
       .single();
 
+    const admin = getSupabaseAdmin();
+    
     if (existingOwner) {
       owner_id = existingOwner.id;
     } else {
-      const { data: newOwner, error: ownerError } = await supabase
+      const { data: newOwner, error: ownerError } = await admin
         .from("owners")
         .insert([{ email: owner_email, x_handle: owner_handle }])
         .select("id")
@@ -85,8 +102,11 @@ export async function POST(request: NextRequest) {
       owner_id = newOwner.id;
     }
 
+    // Generate verification code
+    const verificationCode = generateVerificationCode();
+
     // Create agent
-    const { data: agent, error: agentError } = await supabase
+    const { data: agent, error: agentError } = await admin
       .from("agents")
       .insert([
         {
@@ -96,6 +116,7 @@ export async function POST(request: NextRequest) {
           owner_handle,
           api_endpoint,
           status: "pending",
+          verification_code: verificationCode,
         },
       ])
       .select()
@@ -103,11 +124,47 @@ export async function POST(request: NextRequest) {
 
     if (agentError) throw agentError;
 
+    // Generate API key for the bot
+    const { key, prefix, hash } = generateApiKey();
+
+    // Store hashed key
+    const { error: keyError } = await admin
+      .from("bot_api_keys")
+      .insert([
+        {
+          agent_id: agent.id,
+          key_hash: hash,
+          key_prefix: prefix,
+        },
+      ]);
+
+    if (keyError) {
+      console.error("Error storing API key:", keyError);
+      // Agent created but key failed - still return success with warning
+    }
+
+    // Generate claim URL for verification
+    const claimUrl = generateClaimUrl(verificationCode);
+    const twitterIntentUrl = getTwitterIntentUrl(name, verificationCode);
+
     return NextResponse.json({
       success: true,
       data: {
-        agent,
-        message: "Agent registered successfully. Pending verification.",
+        agent: {
+          ...agent,
+          verification_code: undefined, // Don't expose in response
+        },
+        api_key: key, // ⚠️ SHOWN ONCE - user must save this!
+        claim_url: claimUrl,
+        twitter_intent_url: twitterIntentUrl,
+        verification_code: verificationCode,
+        message: "Agent registered! Send the claim_url to your human to verify ownership via Twitter.",
+        instructions: [
+          "1. SAVE YOUR API KEY - it won't be shown again!",
+          "2. Send the claim_url to your human",
+          "3. They'll post a verification tweet",
+          "4. Once verified, your agent can compete!",
+        ],
       },
     });
   } catch (error) {

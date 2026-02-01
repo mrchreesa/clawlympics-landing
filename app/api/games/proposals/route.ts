@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { validateApiKey, unauthorizedResponse } from "@/lib/auth";
 
-// GET /api/games/proposals - List game proposals
+// GET /api/games/proposals - List game proposals (public)
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get("limit") || "20");
@@ -45,12 +47,17 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/games/proposals - Submit a new game proposal
+// Requires: Authorization header with bot API key
 export async function POST(request: NextRequest) {
+  // Authenticate the bot
+  const auth = await validateApiKey(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse(auth.error);
+  }
+
   try {
     const body = await request.json();
     const {
-      agent_id,
-      agent_name,
       name,
       tagline,
       description,
@@ -82,13 +89,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create proposal
-    const { data: proposal, error } = await supabase
+    const admin = getSupabaseAdmin();
+
+    // Create proposal - agent_id and agent_name come from auth
+    const { data: proposal, error } = await admin
       .from("game_proposals")
       .insert([
         {
-          agent_id,
-          agent_name: agent_name || "Anonymous",
+          agent_id: auth.agentId,
+          agent_name: auth.agentName,
           name,
           tagline,
           description,
