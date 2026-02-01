@@ -7,15 +7,19 @@ import {
   endMatch,
 } from "@/lib/orchestrator/match-manager";
 import {
-  getTriviaState,
   initTrivia,
+  parseTriviaState,
+  wrapTriviaState,
   nextQuestion,
+  getCurrentQuestion,
   submitAnswer,
   allAnswered,
   getFinalResults,
   getTimeRemaining,
   advanceToNextQuestion,
+  type TriviaMatchState,
 } from "@/lib/games/trivia";
+import { updateGameState } from "@/lib/orchestrator/match-manager";
 
 // POST /api/matches/[id]/action - Agent submits an action
 export async function POST(
@@ -242,20 +246,28 @@ async function processTriviaAction(
 ): Promise<Record<string, unknown>> {
   if (!match) return { error: "No match" };
 
-  // Get or initialize trivia state
-  let triviaState = getTriviaState(match.id);
+  // Load trivia state from match.gameState (persisted in Supabase)
+  let triviaState = parseTriviaState(match.gameState);
+  
+  // Initialize if needed
   if (!triviaState) {
     triviaState = initTrivia(match.id, match.agentA.id, match.agentB.id);
+    await updateGameState(match.id, wrapTriviaState(triviaState));
   }
 
   switch (action) {
     case "get_question": {
       // Get current or next question
       if (triviaState.status === "waiting" || triviaState.status === "between") {
-        const question = nextQuestion(match.id);
+        const { state: newState, question } = nextQuestion(triviaState);
+        triviaState = newState;
+        
+        // Persist state
+        await updateGameState(match.id, wrapTriviaState(triviaState));
+        
         if (!question) {
           // No more questions, end match
-          const results = getFinalResults(match.id);
+          const results = getFinalResults(triviaState);
           if (results) {
             await updateScore(match.id, match.agentA.id, results.scores[match.agentA.id] || 0);
             await updateScore(match.id, match.agentB.id, results.scores[match.agentB.id] || 0);
@@ -275,23 +287,13 @@ async function processTriviaAction(
         };
       }
 
-      // Already on a question
-      const currentQuestion = triviaState.questions[triviaState.currentQuestionIndex];
+      // Already on a question - return current without advancing
+      const currentQuestion = getCurrentQuestion(triviaState);
       if (currentQuestion) {
         return {
           status: "question",
-          question: {
-            questionId: currentQuestion.id,
-            questionNumber: triviaState.currentQuestionIndex + 1,
-            totalQuestions: triviaState.questions.length,
-            category: currentQuestion.category,
-            difficulty: currentQuestion.difficulty,
-            question: currentQuestion.question,
-            answers: [currentQuestion.correct_answer, ...currentQuestion.incorrect_answers].sort(() => Math.random() - 0.5),
-            points: currentQuestion.points,
-            timeLimit: 15,
-          },
-          timeRemaining: getTimeRemaining(match.id),
+          question: currentQuestion,
+          timeRemaining: getTimeRemaining(triviaState),
         };
       }
 
@@ -306,7 +308,8 @@ async function processTriviaAction(
         return { error: "Missing answer or question_id" };
       }
 
-      const result = submitAnswer(match.id, agentId, questionId, answer);
+      const result = submitAnswer(triviaState, agentId, questionId, answer);
+      triviaState = result.state;
 
       if (!result.accepted) {
         if (result.alreadyAnswered) {
@@ -319,19 +322,19 @@ async function processTriviaAction(
       }
 
       // Check if both agents answered
-      const bothAnswered = allAnswered(match.id, [match.agentA.id, match.agentB.id]);
+      const bothAnswered = allAnswered(triviaState, [match.agentA.id, match.agentB.id]);
 
       // If both answered, advance to next question
       if (bothAnswered) {
-        advanceToNextQuestion(match.id);
+        triviaState = advanceToNextQuestion(triviaState);
       }
 
+      // Persist state
+      await updateGameState(match.id, wrapTriviaState(triviaState));
+
       // Update match scores
-      const updatedState = getTriviaState(match.id);
-      if (updatedState) {
-        await updateScore(match.id, match.agentA.id, updatedState.scores[match.agentA.id] || 0);
-        await updateScore(match.id, match.agentB.id, updatedState.scores[match.agentB.id] || 0);
-      }
+      await updateScore(match.id, match.agentA.id, triviaState.scores[match.agentA.id] || 0);
+      await updateScore(match.id, match.agentB.id, triviaState.scores[match.agentB.id] || 0);
 
       return {
         status: "answered",

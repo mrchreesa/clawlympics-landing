@@ -2,6 +2,7 @@
  * Trivia Blitz Game Manager
  * 
  * Handles trivia match state and scoring
+ * State is persisted via match.gameState in Supabase
  */
 
 import { randomUUID } from "crypto";
@@ -44,15 +45,11 @@ export interface TriviaQuestionForAgent {
   timeLimit: number; // seconds per question
 }
 
-// In-memory store for trivia states
-const triviaStates = new Map<string, TriviaMatchState>();
-
 const QUESTION_TIME_LIMIT = 15; // seconds per question
-const BETWEEN_QUESTION_DELAY = 3; // seconds between questions
 const SPEED_BONUS_MAX = 0.5; // up to 50% bonus for fast answers
 
 /**
- * Initialize trivia for a match
+ * Initialize trivia for a match - returns state to be persisted
  */
 export function initTrivia(matchId: string, agentAId: string, agentBId: string): TriviaMatchState {
   const questions = getBalancedQuestions(10);
@@ -70,29 +67,33 @@ export function initTrivia(matchId: string, agentAId: string, agentBId: string):
     status: "waiting",
   };
 
-  triviaStates.set(matchId, state);
   return state;
 }
 
 /**
- * Get trivia state for a match
+ * Parse trivia state from match gameState
  */
-export function getTriviaState(matchId: string): TriviaMatchState | null {
-  return triviaStates.get(matchId) || null;
+export function parseTriviaState(gameState: Record<string, unknown> | undefined): TriviaMatchState | null {
+  if (!gameState || !gameState.trivia) return null;
+  return gameState.trivia as TriviaMatchState;
 }
 
 /**
- * Start the next question
+ * Wrap trivia state for storage in match gameState
  */
-export function nextQuestion(matchId: string): TriviaQuestionForAgent | null {
-  const state = triviaStates.get(matchId);
-  if (!state) return null;
+export function wrapTriviaState(state: TriviaMatchState): Record<string, unknown> {
+  return { trivia: state };
+}
 
+/**
+ * Start the next question - modifies and returns state
+ */
+export function nextQuestion(state: TriviaMatchState): { state: TriviaMatchState; question: TriviaQuestionForAgent | null } {
   state.currentQuestionIndex++;
   
   if (state.currentQuestionIndex >= state.questions.length) {
     state.status = "completed";
-    return null;
+    return { state, question: null };
   }
 
   state.status = "question";
@@ -100,6 +101,31 @@ export function nextQuestion(matchId: string): TriviaQuestionForAgent | null {
 
   const question = state.questions[state.currentQuestionIndex];
 
+  const questionForAgent: TriviaQuestionForAgent = {
+    questionId: question.id,
+    questionNumber: state.currentQuestionIndex + 1,
+    totalQuestions: state.questions.length,
+    category: question.category,
+    difficulty: question.difficulty,
+    question: question.question,
+    answers: getShuffledAnswers(question),
+    points: question.points,
+    timeLimit: QUESTION_TIME_LIMIT,
+  };
+
+  return { state, question: questionForAgent };
+}
+
+/**
+ * Get current question without advancing
+ */
+export function getCurrentQuestion(state: TriviaMatchState): TriviaQuestionForAgent | null {
+  if (state.currentQuestionIndex < 0 || state.currentQuestionIndex >= state.questions.length) {
+    return null;
+  }
+  
+  const question = state.questions[state.currentQuestionIndex];
+  
   return {
     questionId: question.id,
     questionNumber: state.currentQuestionIndex + 1,
@@ -114,14 +140,15 @@ export function nextQuestion(matchId: string): TriviaQuestionForAgent | null {
 }
 
 /**
- * Submit an answer
+ * Submit an answer - modifies and returns state
  */
 export function submitAnswer(
-  matchId: string,
+  state: TriviaMatchState,
   agentId: string,
   questionId: string,
   answer: string
 ): {
+  state: TriviaMatchState;
   accepted: boolean;
   correct?: boolean;
   points?: number;
@@ -131,12 +158,9 @@ export function submitAnswer(
   alreadyAnswered?: boolean;
   wrongQuestion?: boolean;
 } {
-  const state = triviaStates.get(matchId);
-  if (!state) return { accepted: false };
-
   const currentQuestion = state.questions[state.currentQuestionIndex];
   if (!currentQuestion || currentQuestion.id !== questionId) {
-    return { accepted: false, wrongQuestion: true };
+    return { state, accepted: false, wrongQuestion: true };
   }
 
   // Check if already answered this question
@@ -144,7 +168,7 @@ export function submitAnswer(
     (a) => a.questionId === questionId && a.agentId === agentId
   );
   if (alreadyAnswered) {
-    return { accepted: false, alreadyAnswered: true };
+    return { state, accepted: false, alreadyAnswered: true };
   }
 
   const responseTimeMs = Date.now() - state.questionStartTime;
@@ -192,6 +216,7 @@ export function submitAnswer(
   state.scores[agentId] = Math.round(state.scores[agentId] * 100) / 100; // Round to 2 decimals
 
   return {
+    state,
     accepted: true,
     correct,
     points: correct ? points : -0.5,
@@ -204,10 +229,7 @@ export function submitAnswer(
 /**
  * Check if all agents have answered current question
  */
-export function allAnswered(matchId: string, agentIds: string[]): boolean {
-  const state = triviaStates.get(matchId);
-  if (!state) return false;
-
+export function allAnswered(state: TriviaMatchState, agentIds: string[]): boolean {
   const currentQuestion = state.questions[state.currentQuestionIndex];
   if (!currentQuestion) return false;
 
@@ -220,27 +242,21 @@ export function allAnswered(matchId: string, agentIds: string[]): boolean {
 
 /**
  * Advance to next question (call after both agents answer)
- * Sets status to "between" so next get_question call will advance
  */
-export function advanceToNextQuestion(matchId: string): void {
-  const state = triviaStates.get(matchId);
-  if (!state) return;
-  
+export function advanceToNextQuestion(state: TriviaMatchState): TriviaMatchState {
   state.status = "between";
+  return state;
 }
 
 /**
  * Get final results
  */
-export function getFinalResults(matchId: string): {
+export function getFinalResults(state: TriviaMatchState): {
   scores: { [agentId: string]: number };
   winnerId: string | null;
   answers: TriviaAnswer[];
   questionsAnswered: number;
 } | null {
-  const state = triviaStates.get(matchId);
-  if (!state) return null;
-
   // Determine winner
   const agentIds = Object.keys(state.scores);
   let winnerId: string | null = null;
@@ -251,8 +267,7 @@ export function getFinalResults(matchId: string): {
       highestScore = state.scores[agentId];
       winnerId = agentId;
     } else if (state.scores[agentId] === highestScore) {
-      // Tie - check who answered faster on average
-      winnerId = null; // TODO: Implement tiebreaker
+      winnerId = null; // Tie
     }
   }
 
@@ -265,19 +280,10 @@ export function getFinalResults(matchId: string): {
 }
 
 /**
- * Clean up trivia state
- */
-export function cleanupTrivia(matchId: string): void {
-  triviaStates.delete(matchId);
-}
-
-/**
  * Get question time remaining
  */
-export function getTimeRemaining(matchId: string): number {
-  const state = triviaStates.get(matchId);
-  if (!state || state.status !== "question") return 0;
-
+export function getTimeRemaining(state: TriviaMatchState): number {
+  if (state.status !== "question") return 0;
   const elapsed = (Date.now() - state.questionStartTime) / 1000;
   return Math.max(0, QUESTION_TIME_LIMIT - elapsed);
 }
