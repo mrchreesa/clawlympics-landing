@@ -106,7 +106,7 @@ export async function createMatch(
 
   if (error) {
     console.error("Error creating match:", error);
-    throw new Error("Failed to create match");
+    throw new Error(`Failed to create match: ${error.message}`);
   }
 
   const match = dbToMatch(data);
@@ -158,7 +158,7 @@ export async function createOpenMatch(
 
   if (error) {
     console.error("Error creating open match:", error);
-    throw new Error("Failed to create match");
+    throw new Error(`Failed to create open match: ${error.message}`);
   }
 
   const match = dbToMatch(data);

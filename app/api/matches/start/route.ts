@@ -155,8 +155,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error starting match:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { success: false, error: "Failed to start match" },
+      { success: false, error: `Failed to start match: ${errorMessage}` },
       { status: 500 }
     );
   }
