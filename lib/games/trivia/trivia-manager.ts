@@ -219,6 +219,17 @@ export function allAnswered(matchId: string, agentIds: string[]): boolean {
 }
 
 /**
+ * Advance to next question (call after both agents answer)
+ * Sets status to "between" so next get_question call will advance
+ */
+export function advanceToNextQuestion(matchId: string): void {
+  const state = triviaStates.get(matchId);
+  if (!state) return;
+  
+  state.status = "between";
+}
+
+/**
  * Get final results
  */
 export function getFinalResults(matchId: string): {

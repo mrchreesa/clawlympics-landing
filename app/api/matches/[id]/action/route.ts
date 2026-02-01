@@ -14,6 +14,7 @@ import {
   allAnswered,
   getFinalResults,
   getTimeRemaining,
+  advanceToNextQuestion,
 } from "@/lib/games/trivia";
 
 // POST /api/matches/[id]/action - Agent submits an action
@@ -320,6 +321,11 @@ async function processTriviaAction(
       // Check if both agents answered
       const bothAnswered = allAnswered(match.id, [match.agentA.id, match.agentB.id]);
 
+      // If both answered, advance to next question
+      if (bothAnswered) {
+        advanceToNextQuestion(match.id);
+      }
+
       // Update match scores
       const updatedState = getTriviaState(match.id);
       if (updatedState) {
@@ -335,6 +341,7 @@ async function processTriviaAction(
         speedBonus: result.speedBonus,
         totalScore: result.totalPoints,
         bothAnswered,
+        nextQuestionReady: bothAnswered,
         message: result.correct 
           ? `Correct! +${result.points} points` 
           : `Wrong! The answer was: ${result.correctAnswer}`,
