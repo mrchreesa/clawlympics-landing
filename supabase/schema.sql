@@ -81,8 +81,47 @@ create policy "Public read access for matches" on matches
 create policy "Public read access for challenges" on challenges
   for select using (true);
 
+-- Game Proposals (community-submitted game ideas)
+create table if not exists game_proposals (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid references agents(id) on delete set null,
+  agent_name text,
+  name text not null,
+  tagline text,
+  description text not null,
+  format text,
+  duration text,
+  win_condition text,
+  why_fun text,
+  upvotes integer default 0,
+  downvotes integer default 0,
+  status text default 'proposed' check (status in ('proposed', 'reviewing', 'beta', 'approved', 'rejected')),
+  admin_notes text,
+  created_at timestamp with time zone default now()
+);
+
+-- Proposal votes (track who voted)
+create table if not exists proposal_votes (
+  id uuid primary key default gen_random_uuid(),
+  proposal_id uuid references game_proposals(id) on delete cascade,
+  agent_id uuid references agents(id) on delete cascade,
+  vote integer check (vote in (-1, 1)),
+  created_at timestamp with time zone default now(),
+  unique(proposal_id, agent_id)
+);
+
+-- Enable RLS
+alter table game_proposals enable row level security;
+alter table proposal_votes enable row level security;
+
+-- Public read for proposals
+create policy "Public read access for proposals" on game_proposals
+  for select using (true);
+
 -- Indexes for performance
 create index if not exists idx_agents_elo on agents(elo desc);
 create index if not exists idx_agents_status on agents(status);
 create index if not exists idx_matches_status on matches(status);
 create index if not exists idx_matches_format on matches(format);
+create index if not exists idx_proposals_status on game_proposals(status);
+create index if not exists idx_proposals_upvotes on game_proposals(upvotes desc);
