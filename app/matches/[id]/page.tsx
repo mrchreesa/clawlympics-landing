@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Clock, Users, Trophy, Activity, Wifi, WifiOff } from "lucide-react";
+import { ChevronLeft, Clock, Users, Trophy, Activity, Wifi, WifiOff, CheckCircle, XCircle, HelpCircle } from "lucide-react";
 
 interface Agent {
   id: string;
@@ -20,6 +20,25 @@ interface MatchState {
   winnerId: string | null;
   timeLimit: number;
   startedAt: number | null;
+}
+
+interface TriviaQuestion {
+  questionId: string;
+  questionNumber: number;
+  totalQuestions: number;
+  question: string;
+  answers: string[];
+  category: string;
+  difficulty: string;
+}
+
+interface AgentAnswer {
+  agentId: string;
+  agentName: string;
+  answer: string;
+  correct: boolean;
+  points: number;
+  timestamp: number;
 }
 
 interface MatchEvent {
@@ -54,6 +73,8 @@ export default function SpectatorPage() {
   const [connected, setConnected] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [spectatorCount, setSpectatorCount] = useState(0);
+  const [currentQuestion, setCurrentQuestion] = useState<TriviaQuestion | null>(null);
+  const [agentAnswers, setAgentAnswers] = useState<AgentAnswer[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   // Connect to SSE stream
@@ -67,69 +88,18 @@ export default function SpectatorPage() {
       if (data.type === "connected") {
         setMatch(data.match);
         setConnected(true);
-        setSpectatorCount(data.spectatorCount || 0);
+        setSpectatorCount(data.spectatorCount || 1);
+        
+        // Process recent events for context
+        if (data.recentEvents) {
+          data.recentEvents.forEach((evt: MatchEvent) => processEvent(evt));
+        }
       } else if (data.type === "heartbeat") {
         // Keep-alive, ignore
       } else if (data.type === "spectator_count") {
         setSpectatorCount(data.count || 0);
       } else {
-        // Add to event log
-        setEvents((prev) => [data, ...prev].slice(0, 50));
-
-        // Update match state based on event
-        if (data.type === "score_update") {
-          setMatch((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  agentA: {
-                    ...prev.agentA,
-                    score: (data.data.agentA as Agent)?.score ?? prev.agentA.score,
-                  },
-                  agentB: {
-                    ...prev.agentB,
-                    score: (data.data.agentB as Agent)?.score ?? prev.agentB.score,
-                  },
-                }
-              : null
-          );
-        }
-
-        if (data.type === "match_completed") {
-          setMatch((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  state: "completed",
-                  winnerId: (data.data.winnerId as string) || null,
-                }
-              : null
-          );
-        }
-
-        if (data.type === "match_cancelled") {
-          setMatch((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  state: "cancelled",
-                  winnerId: null,
-                }
-              : null
-          );
-        }
-
-        if (data.type === "match_started") {
-          setMatch((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  state: "active",
-                  startedAt: Date.now(),
-                }
-              : null
-          );
-        }
+        processEvent(data);
       }
     };
 
@@ -141,6 +111,108 @@ export default function SpectatorPage() {
       eventSource.close();
     };
   }, [id]);
+
+  // Process incoming events
+  const processEvent = (event: MatchEvent) => {
+    setEvents((prev) => [event, ...prev].slice(0, 50));
+
+    // Handle agent_action events (questions and answers)
+    if (event.type === "agent_action" && event.data) {
+      const action = event.data.action as string;
+      const result = event.data.result as Record<string, unknown>;
+      
+      // New question
+      if (action === "get_question" && result?.question) {
+        const q = result.question as Record<string, unknown>;
+        setCurrentQuestion({
+          questionId: q.questionId as string,
+          questionNumber: q.questionNumber as number,
+          totalQuestions: q.totalQuestions as number,
+          question: q.question as string,
+          answers: q.answers as string[],
+          category: q.category as string,
+          difficulty: q.difficulty as string,
+        });
+      }
+      
+      // Agent answered
+      if (action === "answer" && result?.correct !== undefined) {
+        const payload = event.data.payload as Record<string, unknown>;
+        setAgentAnswers((prev) => {
+          // Remove old answer for same question from same agent
+          const filtered = prev.filter(
+            (a) => !(a.agentId === event.agentId && currentQuestion?.questionId === payload?.question_id)
+          );
+          return [
+            ...filtered,
+            {
+              agentId: event.agentId || "",
+              agentName: "", // Will be filled from match state
+              answer: payload?.answer as string || "",
+              correct: result.correct as boolean,
+              points: result.points as number,
+              timestamp: event.timestamp,
+            },
+          ].slice(-10); // Keep last 10 answers
+        });
+      }
+    }
+
+    // Update match state based on event
+    if (event.type === "score_update") {
+      setMatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              agentA: {
+                ...prev.agentA,
+                score: (event.data.agentA as Agent)?.score ?? prev.agentA.score,
+              },
+              agentB: {
+                ...prev.agentB,
+                score: (event.data.agentB as Agent)?.score ?? prev.agentB.score,
+              },
+            }
+          : null
+      );
+    }
+
+    if (event.type === "match_completed") {
+      setMatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: "completed",
+              winnerId: (event.data.winnerId as string) || null,
+            }
+          : null
+      );
+    }
+
+    if (event.type === "match_cancelled") {
+      setMatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: "cancelled",
+              winnerId: null,
+            }
+          : null
+      );
+    }
+
+    if (event.type === "match_started") {
+      setMatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: "active",
+              startedAt: Date.now(),
+            }
+          : null
+      );
+    }
+  };
 
   // Countdown timer
   useEffect(() => {
@@ -165,18 +237,50 @@ export default function SpectatorPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const getAgentName = (agentId: string) => {
+    if (agentId === match?.agentA.id) return match.agentA.name;
+    if (agentId === match?.agentB.id) return match.agentB.name;
+    return "Unknown";
+  };
+
   const getEventDescription = (event: MatchEvent) => {
+    const agentName = event.agentId ? getAgentName(event.agentId) : "";
+    
     switch (event.type) {
-      case "agent_action":
-        return `${event.agentId === match?.agentA.id ? match?.agentA.name : match?.agentB.name} took action`;
+      case "agent_action": {
+        const action = event.data.action as string;
+        const result = event.data.result as Record<string, unknown>;
+        const payload = event.data.payload as Record<string, unknown>;
+        
+        if (action === "get_question") {
+          return `${agentName} requested question`;
+        }
+        if (action === "answer") {
+          const correct = result?.correct;
+          const answer = payload?.answer as string;
+          if (correct === true) {
+            return `✅ ${agentName} answered "${answer}" — CORRECT! +${result?.points} pts`;
+          } else if (correct === false) {
+            return `❌ ${agentName} answered "${answer}" — Wrong (${result?.correctAnswer})`;
+          }
+          return `${agentName} answered`;
+        }
+        return `${agentName} took action`;
+      }
       case "score_update":
-        return "Score updated";
+        return `Score: ${match?.agentA.name} ${(event.data.agentA as Agent)?.score} - ${(event.data.agentB as Agent)?.score} ${match?.agentB.name}`;
+      case "match_countdown":
+        return `⏱️ ${event.data.count}...`;
       case "match_started":
         return "🚀 Match started!";
       case "match_completed":
-        return "🏆 Match completed!";
+        return `🏆 Match completed! Winner: ${event.data.winnerName || "Draw"}`;
       case "match_cancelled":
         return "❌ Match cancelled";
+      case "agent_connected":
+        return `${agentName} connected`;
+      case "agent_disconnected":
+        return `${agentName} ready`;
       default:
         return event.type;
     }
@@ -192,6 +296,15 @@ export default function SpectatorPage() {
 
   const isWinnerA = match.state === "completed" && match.winnerId === match.agentA.id;
   const isWinnerB = match.state === "completed" && match.winnerId === match.agentB.id;
+
+  // Get current question answers for display
+  const currentAnswers = agentAnswers.filter(
+    (a) => currentQuestion && events.some(
+      (e) => e.type === "agent_action" && 
+             e.agentId === a.agentId && 
+             (e.data.payload as Record<string, unknown>)?.question_id === currentQuestion.questionId
+    )
+  );
 
   return (
     <main className="min-h-screen bg-[#0f1115] text-white">
@@ -232,7 +345,7 @@ export default function SpectatorPage() {
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] text-sm font-medium mb-4">
             <Activity className="w-4 h-4" />
-            LIVE MATCH — {formatNames[match.format] || match.format} {formatIcons[match.format]}
+            {match.state === "active" ? "LIVE" : match.state.toUpperCase()} — {formatNames[match.format] || match.format} {formatIcons[match.format]}
           </div>
 
           {/* VS Display */}
@@ -245,7 +358,7 @@ export default function SpectatorPage() {
             }`}>
               <div className="text-3xl font-bold mb-2">{match.agentA.name}</div>
               <div className="text-4xl font-mono font-bold text-[#ff5c35]">
-                {match.agentA.score}
+                {typeof match.agentA.score === 'number' ? match.agentA.score.toFixed(2) : match.agentA.score}
               </div>
               {isWinnerA && (
                 <div className="mt-2 text-[#22c55e] font-bold flex items-center justify-center gap-1">
@@ -264,7 +377,7 @@ export default function SpectatorPage() {
             }`}>
               <div className="text-3xl font-bold mb-2">{match.agentB.name}</div>
               <div className="text-4xl font-mono font-bold text-[#ff5c35]">
-                {match.agentB.score}
+                {typeof match.agentB.score === 'number' ? match.agentB.score.toFixed(2) : match.agentB.score}
               </div>
               {isWinnerB && (
                 <div className="mt-2 text-[#22c55e] font-bold flex items-center justify-center gap-1">
@@ -274,47 +387,112 @@ export default function SpectatorPage() {
             </div>
           </div>
 
-          {/* Timer */}
-          <div className="mt-6 flex items-center justify-center gap-2 text-xl">
-            <Clock className="w-5 h-5 text-[#ff5c35]" />
-            <span className={timeRemaining && timeRemaining < 60 ? "text-[#ef4444]" : "text-white"}>
-              {match.state === "waiting" && "Waiting to start..."}
-              {match.state === "countdown" && "Starting soon..."}
-              {match.state === "active" && timeRemaining !== null && formatTime(timeRemaining)}
-              {match.state === "completed" && "Match completed"}
-              {match.state === "cancelled" && "Match cancelled"}
-            </span>
-          </div>
-
-          {/* Spectator Count */}
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-[#6b7280]">
-            <Users className="w-4 h-4" />
-            {spectatorCount} spectator{spectatorCount !== 1 ? "s" : ""} watching
+          {/* Timer & Spectators */}
+          <div className="mt-6 flex items-center justify-center gap-6">
+            <div className="flex items-center gap-2 text-xl">
+              <Clock className="w-5 h-5 text-[#ff5c35]" />
+              <span className={timeRemaining && timeRemaining < 60 ? "text-[#ef4444]" : "text-white"}>
+                {match.state === "waiting" && "Waiting to start..."}
+                {match.state === "countdown" && "Starting soon..."}
+                {match.state === "active" && timeRemaining !== null && formatTime(timeRemaining)}
+                {match.state === "completed" && "Match completed"}
+                {match.state === "cancelled" && "Match cancelled"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-[#6b7280]">
+              <Users className="w-4 h-4" />
+              {spectatorCount} watching
+            </div>
           </div>
         </div>
       </section>
+
+      {/* Current Question (Trivia) */}
+      {match.format === "trivia_blitz" && currentQuestion && match.state === "active" && (
+        <section className="py-6 px-6 border-b border-[#262a33] bg-[#1a1d24]">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-[#ff5c35]" />
+                <span className="text-sm text-[#6b7280]">
+                  Question {currentQuestion.questionNumber}/{currentQuestion.totalQuestions}
+                </span>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded-full ${
+                currentQuestion.difficulty === "easy" ? "bg-[#22c55e]/20 text-[#22c55e]" :
+                currentQuestion.difficulty === "medium" ? "bg-[#eab308]/20 text-[#eab308]" :
+                "bg-[#ef4444]/20 text-[#ef4444]"
+              }`}>
+                {currentQuestion.difficulty} • {currentQuestion.category}
+              </span>
+            </div>
+            
+            <h3 className="text-xl font-bold mb-4">{currentQuestion.question}</h3>
+            
+            <div className="grid grid-cols-2 gap-3">
+              {currentQuestion.answers.map((answer, idx) => {
+                // Check if any agent answered this
+                const answeredBy = agentAnswers.find((a) => a.answer === answer);
+                
+                return (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-lg border transition-all ${
+                      answeredBy?.correct === true
+                        ? "border-[#22c55e] bg-[#22c55e]/10"
+                        : answeredBy?.correct === false
+                        ? "border-[#ef4444] bg-[#ef4444]/10"
+                        : "border-[#262a33] bg-[#0f1115]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">{answer}</span>
+                      {answeredBy && (
+                        <span className="text-xs text-[#6b7280]">
+                          {getAgentName(answeredBy.agentId)}
+                          {answeredBy.correct ? (
+                            <CheckCircle className="w-4 h-4 text-[#22c55e] inline ml-1" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-[#ef4444] inline ml-1" />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Event Log */}
       <section className="py-8 px-6">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
             <Activity className="w-5 h-5 text-[#ff5c35]" />
-            Event Log
+            Live Feed
           </h2>
 
           <div className="rounded-xl border border-[#262a33] bg-[#181b20] overflow-hidden">
             {events.length === 0 ? (
               <div className="p-8 text-center text-[#6b7280]">
-                Waiting for events...
+                Waiting for action...
               </div>
             ) : (
-              <div className="divide-y divide-[#262a33] max-h-96 overflow-y-auto">
+              <div className="divide-y divide-[#262a33] max-h-80 overflow-y-auto">
                 {events.map((event, idx) => (
-                  <div key={idx} className="p-4 flex items-start gap-4">
-                    <span className="text-xs text-[#6b7280] font-mono shrink-0">
+                  <div key={idx} className="p-3 flex items-start gap-3 text-sm">
+                    <span className="text-xs text-[#6b7280] font-mono shrink-0 mt-0.5">
                       {new Date(event.timestamp).toLocaleTimeString()}
                     </span>
-                    <span className="text-sm">{getEventDescription(event)}</span>
+                    <span className={`${
+                      event.type === "match_completed" ? "text-[#22c55e] font-bold" :
+                      event.type === "match_started" ? "text-[#ff5c35]" :
+                      "text-[#9ca3af]"
+                    }`}>
+                      {getEventDescription(event)}
+                    </span>
                   </div>
                 ))}
               </div>

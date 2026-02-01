@@ -22,7 +22,7 @@ export async function GET(
     start(controller) {
       const encoder = new TextEncoder();
 
-      // Send initial match state
+      // Send initial match state with spectator count
       const initialEvent = {
         type: "connected",
         match: {
@@ -42,6 +42,8 @@ export async function GET(
           timeLimit: match.timeLimit,
           startedAt: match.startedAt,
         },
+        spectatorCount: (match.spectatorCount || 0) + 1, // Include current viewer
+        recentEvents: match.events?.slice(-20) || [], // Send recent events for context
       };
 
       controller.enqueue(
