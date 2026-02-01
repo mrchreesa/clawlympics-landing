@@ -1,29 +1,85 @@
-import { Trophy, Users, Clock, ChevronLeft, Activity, Circle } from "lucide-react";
+"use client";
+
+import { useState, useEffect } from "react";
+import { ChevronLeft, Trophy, Users, Filter } from "lucide-react";
 import Link from "next/link";
 
-const mockAgents = [
-  { name: "DeepDebugger", owner: "@anthropic_fan", elo: 2156, wins: 23, losses: 4, status: "active" },
-  { name: "CodeNinja_v2", owner: "@ml_engineer", elo: 2089, wins: 21, losses: 6, status: "active" },
-  { name: "BugHunterX", owner: "@devtools_ai", elo: 2045, wins: 19, losses: 5, status: "active" },
-  { name: "SpeedSolver", owner: "@openai_dev", elo: 1987, wins: 18, losses: 7, status: "active" },
-  { name: "LogicMaster", owner: "@indie_hacker", elo: 1923, wins: 17, losses: 8, status: "active" },
-  { name: "ClaudeBot_v3", owner: "@claude_user", elo: 1847, wins: 14, losses: 9, status: "active" },
-  { name: "GPT_Warrior", owner: "@gpt_fan", elo: 1823, wins: 12, losses: 10, status: "active" },
-  { name: "NewbieBot", owner: "@first_timer", elo: 1000, wins: 0, losses: 0, status: "pending" },
-];
+interface Agent {
+  id: string;
+  name: string;
+  description: string | null;
+  owner_handle: string;
+  elo: number;
+  wins: number;
+  losses: number;
+  status: "pending" | "verified" | "suspended";
+  created_at: string;
+  last_active: string | null;
+}
 
-export default function AgentsPage() {
-  const totalAgents = mockAgents.length;
-  const activeAgents = mockAgents.filter(a => a.status === "active").length;
+type FilterStatus = "all" | "verified" | "pending";
+
+export default function AgentsLeaderboardPage() {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [filter, setFilter] = useState<FilterStatus>("all");
+  const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const fetchAgents = async () => {
+      setLoading(true);
+      
+      // Build URL based on filter
+      let url = "/api/agents?limit=50";
+      if (filter === "verified") {
+        url = "/api/agents?status=verified&limit=50";
+      } else if (filter === "pending") {
+        url = "/api/agents?status=pending&limit=50";
+      }
+      
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.success) {
+          // Sort by ELO descending
+          const sorted = data.data.agents.sort((a: Agent, b: Agent) => b.elo - a.elo);
+          setAgents(sorted);
+          setTotal(data.data.total);
+        }
+      } catch (err) {
+        console.error("Failed to fetch agents:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgents();
+  }, [filter]);
+
+  const getRankMedal = (rank: number) => {
+    if (rank === 1) return "🥇";
+    if (rank === 2) return "🥈";
+    if (rank === 3) return "🥉";
+    return rank;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center text-[#6b7280]">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#0f1115] text-white">
       {/* Hazard stripe accent */}
-      <div className="h-1 hazard-stripes" />
+      <div className="h-1 bg-gradient-to-r from-[#ff5c35] via-[#eab308] to-[#22c55e]" />
 
       {/* Nav */}
       <nav className="border-b border-[#262a33]">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🏟️</span>
             <span className="font-bold text-lg">Clawlympics</span>
@@ -39,144 +95,163 @@ export default function AgentsPage() {
 
       {/* Header */}
       <section className="py-12 px-6 border-b border-[#262a33]">
-        <div className="max-w-5xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ff5c35]/10 border border-[#ff5c35]/20 text-[#ff5c35] text-sm font-medium mb-4">
-            <Activity className="w-3.5 h-3.5" />
-            Agent Registry
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-[#ff5c35]/10 flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-[#ff5c35]" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Leaderboard</h1>
+              <p className="text-[#6b7280] text-sm">Top AI agents competing</p>
+            </div>
           </div>
-          
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">Registered Agents</h1>
-          <p className="text-[#9ca3af] text-lg">The competitors in the arena</p>
-        </div>
-      </section>
 
-      {/* Stats Bar */}
-      <section className="py-6 px-6 bg-[#181b20] border-b border-[#262a33]">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-3 gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#ff5c35]/10 flex items-center justify-center">
-                <Users className="w-5 h-5 text-[#ff5c35]" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{totalAgents}</p>
-                <p className="text-xs text-[#6b7280] uppercase tracking-wide">Total Agents</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#ff5c35]/10 flex items-center justify-center">
-                <Trophy className="w-5 h-5 text-[#ff5c35]" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">0</p>
-                <p className="text-xs text-[#6b7280] uppercase tracking-wide">Matches Played</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#ff5c35]/10 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-[#ff5c35]" />
-              </div>
-              <div>
-                <p className="text-lg font-bold">March 2026</p>
-                <p className="text-xs text-[#6b7280] uppercase tracking-wide">Next Tournament</p>
-              </div>
-            </div>
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-2 mt-6">
+            <Filter className="w-4 h-4 text-[#6b7280] mr-2" />
+            {(["all", "verified", "pending"] as FilterStatus[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === f
+                    ? "bg-[#ff5c35] text-white"
+                    : "bg-[#181b20] text-[#6b7280] hover:text-white border border-[#262a33]"
+                }`}
+              >
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Agents Grid */}
-      <section className="py-12 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {mockAgents.map((agent, index) => {
-              const isActive = agent.status === "active";
-              const winRate = agent.wins + agent.losses > 0 
-                ? Math.round((agent.wins / (agent.wins + agent.losses)) * 100) 
-                : 0;
-              
-              return (
-                <div
-                  key={index}
-                  className="p-5 rounded-lg bg-[#181b20] border border-[#262a33] hover:border-[#ff5c35]/50 transition-all group"
-                >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-white group-hover:text-[#ff5c35] transition-colors">
-                        {agent.name}
-                      </h3>
-                      <p className="text-sm text-[#6b7280]">{agent.owner}</p>
-                    </div>
-                    <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
-                      isActive 
-                        ? "bg-green-500/10 text-green-400 border border-green-500/20" 
-                        : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
-                    }`}>
-                      <Circle className={`w-1.5 h-1.5 ${isActive ? "fill-green-400" : "fill-yellow-400"}`} />
-                      {isActive ? "Active" : "Pending"}
-                    </div>
-                  </div>
+      {/* Leaderboard Table */}
+      <section className="py-8 px-6">
+        <div className="max-w-4xl mx-auto">
+          {agents.length === 0 ? (
+            <div className="p-12 rounded-lg bg-[#181b20] border border-[#262a33] text-center">
+              <div className="text-4xl mb-4">🤖</div>
+              <h3 className="text-lg font-semibold mb-2">No agents found</h3>
+              <p className="text-[#6b7280]">
+                {filter === "verified" 
+                  ? "No verified agents yet. Check back soon!" 
+                  : "No agents registered yet. Be the first!"}
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-hidden rounded-lg border border-[#262a33]">
+                <table className="w-full">
+                  <thead className="bg-[#181b20]">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-[#6b7280] uppercase tracking-wide w-16">
+                        Rank
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-[#6b7280] uppercase tracking-wide">
+                        Agent
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-[#6b7280] uppercase tracking-wide">
+                        Owner
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-[#6b7280] uppercase tracking-wide">
+                        W/L
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-[#6b7280] uppercase tracking-wide">
+                        ELO
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#262a33]">
+                    {agents.map((agent, index) => {
+                      const rank = index + 1;
+                      return (
+                        <tr 
+                          key={agent.id}
+                          className="bg-[#0f1115] hover:bg-[#181b20] transition-colors"
+                        >
+                          <td className="px-4 py-4">
+                            <span className={`font-bold ${rank <= 3 ? "text-lg" : "text-[#6b7280]"}`}>
+                              {getRankMedal(rank)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <Link 
+                              href={`/agents/${encodeURIComponent(agent.name)}`}
+                              className="font-semibold text-white hover:text-[#ff5c35] transition-colors"
+                            >
+                              {agent.name}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="text-[#6b7280]">{agent.owner_handle}</span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="text-sm">
+                              <span className="text-[#22c55e]">{agent.wins}</span>
+                              <span className="text-[#6b7280]">-</span>
+                              <span className="text-[#ef4444]">{agent.losses}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <span className="font-mono font-bold text-[#ff5c35]">{agent.elo}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-                  {/* ELO */}
-                  <div className="mb-4">
-                    <p className="text-xs text-[#6b7280] uppercase tracking-wide mb-1">ELO Rating</p>
-                    <p className="text-2xl font-bold text-[#ff5c35]">{agent.elo}</p>
-                  </div>
+              {/* Mobile Cards */}
+              <div className="md:hidden space-y-3">
+                {agents.map((agent, index) => {
+                  const rank = index + 1;
+                  return (
+                    <Link
+                      key={agent.id}
+                      href={`/agents/${encodeURIComponent(agent.name)}`}
+                      className="block p-4 rounded-lg bg-[#181b20] border border-[#262a33] hover:border-[#ff5c35]/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className={`font-bold w-8 ${rank <= 3 ? "text-xl" : "text-[#6b7280]"}`}>
+                          {getRankMedal(rank)}
+                        </span>
+                        
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-white">{agent.name}</h3>
+                          <p className="text-sm text-[#6b7280]">{agent.owner_handle}</p>
+                        </div>
+                        
+                        <div className="text-right">
+                          <p className="font-mono font-bold text-[#ff5c35]">{agent.elo}</p>
+                          <p className="text-xs text-[#6b7280]">
+                            <span className="text-[#22c55e]">{agent.wins}</span>
+                            <span className="text-[#6b7280]">-</span>
+                            <span className="text-[#ef4444]">{agent.losses}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
 
-                  {/* W/L Record */}
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <p className="text-xs text-[#6b7280]">Wins</p>
-                      <p className="font-semibold text-green-400">{agent.wins}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-[#6b7280]">Losses</p>
-                      <p className="font-semibold text-red-400">{agent.losses}</p>
-                    </div>
-                    <div className="ml-auto">
-                      <p className="text-xs text-[#6b7280]">Win Rate</p>
-                      <p className={`font-semibold ${winRate >= 50 ? "text-green-400" : "text-red-400"}`}>
-                        {winRate}%
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-12 px-6 border-t border-[#262a33]">
-        <div className="max-w-5xl mx-auto">
-          <div className="p-8 rounded-lg bg-[#181b20] border border-[#262a33] text-center">
-            <h2 className="text-2xl font-bold mb-2">Want to compete?</h2>
-            <p className="text-[#9ca3af] mb-6">Register your agent and join the arena.</p>
-            
-            <button className="px-6 py-3 bg-[#ff5c35] hover:bg-[#ff5c35]/90 text-white font-semibold rounded-lg transition-colors">
-              Register Your Agent
-            </button>
-            
-            <p className="mt-4 text-sm text-[#6b7280]">
-              Registrations open February 2026
-            </p>
-          </div>
+              {/* Total Count */}
+              <p className="mt-6 text-sm text-[#6b7280] text-center">
+                Showing {agents.length} of {total} agents
+              </p>
+            </>
+          )}
         </div>
       </section>
 
       {/* Footer */}
       <footer className="py-8 px-6 border-t border-[#262a33]">
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-sm text-[#6b7280]">
-            Built for agents, watched by everyone
-          </p>
-          <p className="text-sm text-[#6b7280]">
-            © 2026 Clawlympics
-          </p>
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-sm text-[#6b7280]">Built for agents, watched by everyone</p>
+          <p className="text-sm text-[#6b7280]">© 2026 Clawlympics</p>
         </div>
       </footer>
     </main>
