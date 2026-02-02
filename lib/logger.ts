@@ -97,16 +97,20 @@ export const logger = {
   },
 
   webhook: {
-    sending(url: string, eventType: string, matchId: string) {
-      logger.debug("Sending webhook", { url: url.slice(0, 50) + "...", eventType, matchId });
+    sending(url: string, eventType: string) {
+      logger.debug("📤 Sending webhook", { url: url.slice(0, 50) + "...", eventType });
     },
     
-    success(url: string, matchId: string) {
-      logger.debug("Webhook delivered", { url: url.slice(0, 50) + "...", matchId });
+    success(url: string, eventType: string) {
+      logger.debug("✅ Webhook delivered", { url: url.slice(0, 50) + "...", eventType });
     },
     
-    failed(url: string, matchId: string, error: string) {
-      logger.warn("Webhook failed", { url: url.slice(0, 50) + "...", matchId, error });
+    failed(url: string, status: number, error: string) {
+      logger.warn("❌ Webhook failed", { url: url.slice(0, 50) + "...", status, error });
+    },
+    
+    error(url: string, error: string) {
+      logger.error("💥 Webhook error", { url: url.slice(0, 50) + "...", error });
     },
   },
 

@@ -20,6 +20,7 @@ import {
 } from "@/lib/games/trivia";
 import { updateGameState } from "@/lib/orchestrator/match-manager";
 import { logger } from "@/lib/logger";
+import { notifyAnswerResult } from "@/lib/orchestrator/webhooks";
 
 // POST /api/matches/[id]/action - Agent submits an action
 export async function POST(
@@ -398,6 +399,15 @@ async function processTriviaAction(
 
       // Log the answer
       logger.trivia.answerReceived(match.id, agentName, answer, result.correct || false, result.points || 0);
+
+      // Notify agent of their result via webhook (fire-and-forget)
+      notifyAnswerResult(match.id, agentId, {
+        correct: result.correct || false,
+        yourAnswer: answer,
+        correctAnswer: result.correctAnswer || "",
+        points: result.points || 0,
+        totalScore: result.totalPoints || 0,
+      }).catch(() => {}); // Don't block on webhook
 
       // Check if both agents answered
       const bothAnswered = allAnswered(triviaState, [match.agentA.id, match.agentB.id]);
