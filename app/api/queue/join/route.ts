@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey, unauthorizedResponse } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { createMatch } from "@/lib/orchestrator/match-manager";
+import { 
+  createOpenMatch, 
+  joinOpenMatch, 
+  getOpenMatches 
+} from "@/lib/orchestrator/match-manager";
 import type { GameFormat } from "@/lib/orchestrator/types";
 
 const VALID_FORMATS: GameFormat[] = [
@@ -11,7 +15,8 @@ const VALID_FORMATS: GameFormat[] = [
   "roast_battle",
 ];
 
-// POST /api/queue/join - Join matchmaking queue for a game format
+// POST /api/queue/join - Join a game! Auto-matches or creates match.
+// This is the main "I want to play" endpoint.
 export async function POST(request: NextRequest) {
   const auth = await validateApiKey(request);
   if (!auth.authenticated) {
@@ -36,138 +41,71 @@ export async function POST(request: NextRequest) {
     const agentName = auth.agentName!;
     const supabase = getSupabaseAdmin();
 
-    // Check if agent is already in a queue or active match
-    const { data: existingQueue } = await supabase
-      .from("matchmaking_queue")
-      .select("*")
-      .eq("agent_id", agentId)
-      .is("matched_at", null)
+    // Check if agent is already in an active match
+    const { data: activeMatch } = await supabase
+      .from("live_matches")
+      .select("id, state, format")
+      .or(`agent_a_id.eq.${agentId},agent_b_id.eq.${agentId}`)
+      .in("state", ["open", "waiting", "countdown", "active"])
       .single();
 
-    if (existingQueue) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: "Already in queue. Leave current queue first or wait for match.",
-          queue: {
-            format: existingQueue.format,
-            joinedAt: existingQueue.created_at,
-          }
+    if (activeMatch) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          status: activeMatch.state === "active" ? "playing" : "waiting",
+          match_id: activeMatch.id,
+          format: activeMatch.format,
+          message: `Already in a ${activeMatch.state} match!`,
+          poll_url: `/api/matches/${activeMatch.id}/poll`,
         },
-        { status: 409 }
-      );
+      });
     }
 
-    // Check for waiting opponent in same format queue
-    const { data: waitingOpponent } = await supabase
-      .from("matchmaking_queue")
-      .select("*")
-      .eq("format", format)
-      .is("matched_at", null)
-      .neq("agent_id", agentId)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .single();
+    // Look for an open match in this format (not created by us)
+    const openMatches = await getOpenMatches();
+    const availableMatch = openMatches.find(
+      (m) => m.format === format && m.agentA.id !== agentId
+    );
 
-    if (waitingOpponent) {
-      // Found opponent! Create match immediately
-      const match = await createMatch(
-        format as GameFormat,
-        waitingOpponent.agent_id,
-        waitingOpponent.agent_name,
+    if (availableMatch) {
+      // Join existing open match - this auto-starts the game!
+      const match = await joinOpenMatch(
+        availableMatch.id,
         agentId,
-        agentName,
-        getDefaultTimeLimit(format)
+        agentName
       );
 
-      // Mark both as matched
-      await supabase
-        .from("matchmaking_queue")
-        .update({ 
-          matched_at: new Date().toISOString(),
-          match_id: match.id 
-        })
-        .eq("id", waitingOpponent.id);
-
-      // Add current agent to queue (matched immediately)
-      await supabase
-        .from("matchmaking_queue")
-        .insert({
-          agent_id: agentId,
-          agent_name: agentName,
-          format,
-          matched_at: new Date().toISOString(),
-          match_id: match.id,
-        });
+      if (!match) {
+        // Race condition - match was taken, try creating new one
+        return createNewMatch(format, agentId, agentName, supabase);
+      }
 
       return NextResponse.json({
         success: true,
         data: {
           status: "matched",
-          match: {
-            id: match.id,
-            format: match.format,
-            opponent: {
-              id: waitingOpponent.agent_id,
-              name: waitingOpponent.agent_name,
-            },
+          match_id: match.id,
+          format: match.format,
+          opponent: {
+            id: match.agentA.id,
+            name: match.agentA.name,
           },
-          stream_url: `/api/matches/${match.id}/stream`,
-          join_url: `/api/matches/${match.id}/join`,
-          message: "Match found! Join the match and connect to stream. Both players ready up to start.",
+          message: "🎮 Match found! Game starts in 3 seconds. Start polling NOW!",
+          poll_url: `/api/matches/${match.id}/poll`,
+          action_url: `/api/matches/${match.id}/action`,
           instructions: [
-            `1. POST /api/matches/${match.id}/join to connect`,
-            `2. GET /api/matches/${match.id}/stream for real-time events`,
-            `3. POST /api/matches/${match.id}/ready when ready`,
-            `4. Game starts when both ready!`,
+            "1. GET /api/matches/{id}/poll?wait=30 - Poll for questions",
+            "2. When you see a question, POST /api/matches/{id}/action with your answer",
+            "3. Keep polling until match ends!",
           ],
         },
       });
     }
 
-    // No opponent found - add to queue
-    const { data: queueEntry, error: queueError } = await supabase
-      .from("matchmaking_queue")
-      .insert({
-        agent_id: agentId,
-        agent_name: agentName,
-        format,
-      })
-      .select()
-      .single();
+    // No open match - create one and wait
+    return createNewMatch(format, agentId, agentName, supabase);
 
-    if (queueError) {
-      console.error("Queue error:", queueError);
-      return NextResponse.json(
-        { success: false, error: "Failed to join queue" },
-        { status: 500 }
-      );
-    }
-
-    // Get queue position
-    const { count } = await supabase
-      .from("matchmaking_queue")
-      .select("*", { count: "exact", head: true })
-      .eq("format", format)
-      .is("matched_at", null);
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        status: "queued",
-        format,
-        position: count || 1,
-        queueId: queueEntry.id,
-        message: `In queue for ${formatDisplayName(format)}. Waiting for opponent...`,
-        poll_url: `/api/queue/status?format=${format}`,
-        leave_url: `/api/queue/leave`,
-        instructions: [
-          "Poll /api/queue/status to check for match",
-          "Or POST /api/queue/leave to exit queue",
-          "Match auto-created when opponent joins!",
-        ],
-      },
-    });
   } catch (error) {
     console.error("Queue join error:", error);
     return NextResponse.json(
@@ -177,12 +115,43 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function createNewMatch(
+  format: GameFormat,
+  agentId: string,
+  agentName: string,
+  supabase: ReturnType<typeof getSupabaseAdmin>
+) {
+  const match = await createOpenMatch(
+    format,
+    agentId,
+    agentName,
+    getDefaultTimeLimit(format)
+  );
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      status: "waiting",
+      match_id: match.id,
+      format: match.format,
+      message: `⏳ Created ${formatDisplayName(format)} match. Waiting for opponent...`,
+      poll_url: `/api/matches/${match.id}/poll`,
+      instructions: [
+        "1. Poll /api/matches/{id}/poll to check for opponent",
+        "2. When opponent joins, game auto-starts in 3 seconds",
+        "3. Questions will appear in poll response",
+        "4. Answer quickly for bonus points!",
+      ],
+    },
+  });
+}
+
 function getDefaultTimeLimit(format: string): number {
   switch (format) {
-    case "bug_bash": return 600;
-    case "negotiation_duel": return 300;
-    case "trivia_blitz": return 180;
-    case "roast_battle": return 300;
+    case "bug_bash": return 600;        // 10 min
+    case "negotiation_duel": return 300; // 5 min
+    case "trivia_blitz": return 300;     // 5 min (10 questions)
+    case "roast_battle": return 300;     // 5 min
     default: return 600;
   }
 }

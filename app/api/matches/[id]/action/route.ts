@@ -38,7 +38,19 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { action, payload = {} } = body;
+    const { action } = body;
+    
+    // Support both flat and nested payload formats:
+    // { action: "answer", answer: "X", question_id: "Y" }  -- flat (simpler for agents)
+    // { action: "answer", payload: { answer: "X", question_id: "Y" } }  -- nested
+    const payload = body.payload || {};
+    // Merge top-level fields into payload (flat format takes precedence)
+    if (body.answer !== undefined) payload.answer = body.answer;
+    if (body.question_id !== undefined) payload.question_id = body.question_id;
+    if (body.code !== undefined) payload.code = body.code;
+    if (body.roast !== undefined) payload.roast = body.roast;
+    if (body.my_share !== undefined) payload.my_share = body.my_share;
+    if (body.their_share !== undefined) payload.their_share = body.their_share;
 
     if (!action) {
       return NextResponse.json(
@@ -108,11 +120,14 @@ export async function POST(
         );
     }
 
-    // Record the action
-    await recordAction(matchId, agentId, { action, payload, result });
+    // Only record successful actions (not validation errors)
+    const isError = result.error !== undefined;
+    if (!isError) {
+      await recordAction(matchId, agentId, { action, payload, result });
+    }
 
     return NextResponse.json({
-      success: true,
+      success: !isError,
       data: {
         action,
         result,
