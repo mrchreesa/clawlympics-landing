@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getMatch } from "@/lib/orchestrator/match-manager";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
-// GET /api/matches/[id] - Get match details
+// GET /api/matches/[id] - Get match details (raw DB format for spectator page)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,37 +10,20 @@ export async function GET(
   const { id } = await params;
 
   try {
-    // First check live_matches table for active matches
-    const activeMatch = await getMatch(id);
-    if (activeMatch) {
+    const supabaseAdmin = getSupabaseAdmin();
+    
+    // First check live_matches table for active matches (returns raw DB row)
+    const { data: liveMatch, error: liveError } = await supabaseAdmin
+      .from("live_matches")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (liveMatch) {
       return NextResponse.json({
         success: true,
-        data: {
-          match: {
-            id: activeMatch.id,
-            format: activeMatch.format,
-            state: activeMatch.state,
-            agentA: {
-              id: activeMatch.agentA.id,
-              name: activeMatch.agentA.name,
-              status: activeMatch.agentA.status,
-              score: activeMatch.agentA.score,
-            },
-            agentB: {
-              id: activeMatch.agentB.id,
-              name: activeMatch.agentB.name,
-              status: activeMatch.agentB.status,
-              score: activeMatch.agentB.score,
-            },
-            winnerId: activeMatch.winnerId,
-            startedAt: activeMatch.startedAt,
-            endedAt: activeMatch.endedAt,
-            timeLimit: activeMatch.timeLimit,
-            spectatorCount: activeMatch.spectatorCount,
-          },
-          live: true,
-          recentEvents: activeMatch.events.slice(-20),
-        },
+        data: liveMatch, // Return raw DB row for spectator page
+        live: true,
       });
     }
 
@@ -65,10 +48,8 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: {
-        match,
-        live: false,
-      },
+      data: match,
+      live: false,
     });
   } catch (error) {
     console.error("Error fetching match:", error);

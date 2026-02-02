@@ -195,7 +195,7 @@ export function ClawlympicsAnimation() {
                   cy="200" 
                   r="16" 
                   fill={agent.color}
-                  opacity="0.3"
+                  opacity="0.02"
                 />
                 {/* Agent icon */}
                 <text 

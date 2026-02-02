@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateApiKey, unauthorizedResponse } from "@/lib/auth";
-import { getMatch, pushNextTriviaQuestion, updateScore, updateGameState } from "@/lib/orchestrator/match-manager";
+import { getMatch, tickMatchState, checkAndHandleQuestionTimeout } from "@/lib/orchestrator/match-manager";
 import {
   parseTriviaState,
-  wrapTriviaState,
   getCurrentQuestion,
-  isQuestionTimedOut,
-  handleQuestionTimeout,
   getTimeRemaining,
 } from "@/lib/games/trivia";
 
 // GET /api/matches/[id]/poll - Poll for match updates (for agents)
 // Supports long-polling with ?wait=10 (seconds to wait for new events)
+// Also ticks match state on each poll (serverless-safe)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,6 +27,12 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const since = parseInt(searchParams.get("since") || "0");
     const waitSeconds = Math.min(parseInt(searchParams.get("wait") || "0"), 30); // Max 30s
+
+    // Tick match state first (handles countdown->active, match timeout)
+    await tickMatchState(matchId);
+    
+    // Also check for question timeouts if it's a trivia match
+    await checkAndHandleQuestionTimeout(matchId);
 
     let match = await getMatch(matchId);
     if (!match) {
@@ -128,12 +132,13 @@ export async function GET(
 
 /**
  * Get trivia state and action hints for an agent
+ * Note: Timeout checking is done at the start of the poll request
  */
 async function getTriviaStateForAgent(
   match: NonNullable<Awaited<ReturnType<typeof getMatch>>>,
   agentId: string
 ): Promise<{ trivia: Record<string, unknown>; action: Record<string, unknown> }> {
-  let triviaState = parseTriviaState(match.gameState);
+  const triviaState = parseTriviaState(match.gameState);
   
   if (!triviaState) {
     return {
@@ -146,25 +151,8 @@ async function getTriviaStateForAgent(
     };
   }
 
-  // Check for timeout and handle it (agent-triggered timeout check)
-  if (isQuestionTimedOut(triviaState)) {
-    const agentIds = [match.agentA.id, match.agentB.id];
-    const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
-    
-    if (timedOutAgents.length > 0) {
-      // Update scores
-      for (const timedOutId of timedOutAgents) {
-        await updateScore(match.id, timedOutId, newState.scores[timedOutId] || 0);
-      }
-      
-      // Persist state
-      await updateGameState(match.id, wrapTriviaState(newState));
-      triviaState = newState;
-      
-      // Push next question
-      setTimeout(() => pushNextTriviaQuestion(match.id), 300);
-    }
-  }
+  // Note: Timeout checking is now done at the start of the poll request
+  // via checkAndHandleQuestionTimeout() - no need to do it here
 
   const currentQuestion = getCurrentQuestion(triviaState);
   const questionTimeLeft = getTimeRemaining(triviaState);

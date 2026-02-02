@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Clock, Users, Trophy, Activity, Wifi, WifiOff, CheckCircle, XCircle, HelpCircle } from "lucide-react";
+import { ChevronLeft, Clock, Users, Trophy, Activity, Wifi, WifiOff, CheckCircle, XCircle, HelpCircle, RefreshCw } from "lucide-react";
+import { subscribeToMatchRealtime, getRealtimeClient } from "@/lib/supabase-realtime";
 
 interface Agent {
   id: string;
@@ -20,6 +21,8 @@ interface MatchState {
   winnerId: string | null;
   timeLimit: number;
   startedAt: number | null;
+  events: MatchEvent[];
+  gameState?: Record<string, unknown>;
 }
 
 interface TriviaQuestion {
@@ -31,7 +34,7 @@ interface TriviaQuestion {
   category: string;
   difficulty: string;
   timeLimit?: number;
-  questionStartTime?: number; // Server timestamp when question started (persistent)
+  questionStartTime?: number;
 }
 
 interface AgentAnswer {
@@ -44,6 +47,7 @@ interface AgentAnswer {
 }
 
 interface MatchEvent {
+  id?: string;
   type: string;
   timestamp: number;
   agentId?: string;
@@ -68,74 +72,202 @@ const formatNames: Record<string, string> = {
   persuasion_pit: "Persuasion Pit",
 };
 
+// Convert DB row to frontend match state
+function dbToMatchState(row: Record<string, unknown>): MatchState {
+  return {
+    id: row.id as string,
+    format: row.format as string,
+    state: row.state as MatchState["state"],
+    agentA: {
+      id: row.agent_a_id as string,
+      name: row.agent_a_name as string,
+      score: Number(row.agent_a_score) || 0,
+    },
+    agentB: row.agent_b_id && row.agent_b_id !== "00000000-0000-0000-0000-000000000000"
+      ? {
+          id: row.agent_b_id as string,
+          name: row.agent_b_name as string,
+          score: Number(row.agent_b_score) || 0,
+        }
+      : null,
+    winnerId: row.winner_id as string | null,
+    timeLimit: row.time_limit as number,
+    startedAt: row.started_at ? new Date(row.started_at as string).getTime() : null,
+    events: (row.events as MatchEvent[]) || [],
+    gameState: row.game_state as Record<string, unknown>,
+  };
+}
+
 export default function SpectatorPage() {
   const { id } = useParams();
   const [match, setMatch] = useState<MatchState | null>(null);
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [connectionType, setConnectionType] = useState<"realtime" | "polling" | "sse">("polling");
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [spectatorCount, setSpectatorCount] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState<TriviaQuestion | null>(null);
   const [agentAnswers, setAgentAnswers] = useState<AgentAnswer[]>([]);
   const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [lastPollTime, setLastPollTime] = useState<number>(0);
+  const timeoutTriggeredRef = useRef<string | null>(null);
+  const processedEventIds = useRef<Set<string>>(new Set());
 
-  // Connect to SSE stream
-  useEffect(() => {
-    const eventSource = new EventSource(`/api/matches/${id}/stream`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+  // Fetch match data (initial load and polling fallback)
+  const fetchMatch = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/matches/${id}`);
+      const data = await res.json();
       
-      if (data.type === "connected") {
-        setMatch(data.match);
-        setConnected(true);
-        setSpectatorCount(data.spectatorCount || 1);
+      if (data.success && data.data) {
+        const matchData = dbToMatchState(data.data);
+        setMatch(matchData);
+        setLastPollTime(Date.now());
         
-        // Restore current question from trivia state (persistent on refresh)
-        if (data.triviaState?.currentQuestion) {
-          const q = data.triviaState.currentQuestion;
-          setCurrentQuestion({
-            questionId: q.questionId,
-            questionNumber: q.questionNumber,
-            totalQuestions: q.totalQuestions,
-            question: q.question,
-            answers: q.answers,
-            category: q.category,
-            difficulty: q.difficulty,
-            timeLimit: q.timeLimit || 30,
-            questionStartTime: data.triviaState.questionStartTime,
-          });
+        // Process events
+        if (matchData.events?.length) {
+          // Only add new events
+          const newEvents = matchData.events.filter(e => !processedEventIds.current.has(e.id || `${e.type}-${e.timestamp}`));
+          for (const event of newEvents) {
+            processedEventIds.current.add(event.id || `${event.type}-${event.timestamp}`);
+            processEvent(event);
+          }
+          setEvents(matchData.events.slice().reverse().slice(0, 50));
         }
         
-        // Process recent events for context (but don't override current question)
-        if (data.recentEvents) {
-          // Only add events to the log, don't re-trigger question state changes
-          setEvents(data.recentEvents.slice().reverse());
+        // Extract trivia state
+        const triviaState = matchData.gameState?.trivia as Record<string, unknown> | undefined;
+        if (triviaState?.questions && matchData.state === "active") {
+          const questions = triviaState.questions as Array<Record<string, unknown>>;
+          const currentIdx = triviaState.currentQuestionIndex as number;
+          const q = questions[currentIdx];
+          if (q && currentIdx < questions.length) {
+            setCurrentQuestion({
+              questionId: q.id as string,
+              questionNumber: currentIdx + 1,
+              totalQuestions: questions.length,
+              question: q.question as string,
+              answers: (triviaState.currentShuffledAnswers as string[]) || [],
+              category: q.category as string,
+              difficulty: q.difficulty as string,
+              timeLimit: 30,
+              questionStartTime: triviaState.questionStartTime as number,
+            });
+          }
         }
-      } else if (data.type === "heartbeat") {
-        // Keep-alive, ignore
-      } else if (data.type === "spectator_count") {
-        setSpectatorCount(data.count || 0);
-      } else {
-        processEvent(data);
+        
+        return matchData;
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to fetch match:", error);
+      return null;
+    }
+  }, [id]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchMatch().then((data) => {
+      if (data) setConnected(true);
+    });
+  }, [fetchMatch]);
+
+  // Try Supabase Realtime first, fallback to polling
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    const setupRealtime = async () => {
+      // Check if realtime is available
+      const client = getRealtimeClient();
+      if (!client) {
+        console.log("[Spectator] No realtime client, using polling");
+        setConnectionType("polling");
+        return false;
+      }
+
+      try {
+        unsubscribe = subscribeToMatchRealtime(
+          id as string,
+          (updatedMatch) => {
+            console.log("[Spectator] Realtime update received");
+            const matchData = dbToMatchState(updatedMatch);
+            setMatch(matchData);
+            setConnected(true);
+            setConnectionType("realtime");
+            
+            // Process new events
+            if (matchData.events?.length) {
+              const newEvents = matchData.events.filter(e => !processedEventIds.current.has(e.id || `${e.type}-${e.timestamp}`));
+              for (const event of newEvents) {
+                processedEventIds.current.add(event.id || `${event.type}-${event.timestamp}`);
+                processEvent(event);
+              }
+              setEvents(matchData.events.slice().reverse().slice(0, 50));
+            }
+            
+            // Update trivia state
+            const triviaState = matchData.gameState?.trivia as Record<string, unknown> | undefined;
+            if (triviaState?.questions && matchData.state === "active") {
+              const questions = triviaState.questions as Array<Record<string, unknown>>;
+              const currentIdx = triviaState.currentQuestionIndex as number;
+              const q = questions[currentIdx];
+              if (q && currentIdx < questions.length) {
+                setCurrentQuestion({
+                  questionId: q.id as string,
+                  questionNumber: currentIdx + 1,
+                  totalQuestions: questions.length,
+                  question: q.question as string,
+                  answers: (triviaState.currentShuffledAnswers as string[]) || [],
+                  category: q.category as string,
+                  difficulty: q.difficulty as string,
+                  timeLimit: 30,
+                  questionStartTime: triviaState.questionStartTime as number,
+                });
+              }
+            }
+          },
+          (event) => {
+            // Handle individual events from realtime
+            if (event && typeof event === 'object' && 'type' in event && 'timestamp' in event) {
+              processEvent(event as unknown as MatchEvent);
+            }
+          }
+        );
+        
+        setConnectionType("realtime");
+        console.log("[Spectator] Realtime connected");
+        return true;
+      } catch (error) {
+        console.error("[Spectator] Realtime failed:", error);
+        return false;
       }
     };
 
-    eventSource.onerror = () => {
-      setConnected(false);
-    };
+    // Try realtime, then fallback to polling
+    setupRealtime().then((success) => {
+      if (!success) {
+        // Fallback: Poll every 2 seconds
+        console.log("[Spectator] Starting polling fallback");
+        pollInterval = setInterval(() => {
+          fetchMatch();
+        }, 2000);
+      } else {
+        // Even with realtime, poll every 10s as backup
+        pollInterval = setInterval(() => {
+          fetchMatch();
+        }, 10000);
+      }
+    });
 
     return () => {
-      eventSource.close();
+      if (unsubscribe) unsubscribe();
+      if (pollInterval) clearInterval(pollInterval);
     };
-  }, [id]);
+  }, [id, fetchMatch]);
 
   // Process incoming events
-  const processEvent = (event: MatchEvent) => {
-    setEvents((prev) => [event, ...prev].slice(0, 50));
-
+  const processEvent = useCallback((event: MatchEvent) => {
     // Handle pushed challenge events (server pushes questions via SSE)
     if (event.type === "challenge" && event.data?.question) {
       const q = event.data.question as Record<string, unknown>;
@@ -148,84 +280,39 @@ export default function SpectatorPage() {
         category: q.category as string,
         difficulty: q.difficulty as string,
         timeLimit: (q.timeLimit as number) || 30,
-        questionStartTime: event.timestamp, // Use server timestamp for persistence
+        questionStartTime: event.timestamp,
       });
-      // Clear previous answers for new question
       setAgentAnswers([]);
-    }
-
-    // Handle question timeout
-    if (event.type === "question_timeout") {
-      // Question timed out, clear current question (next one will be pushed)
-      // Keep answers visible briefly for feedback
     }
 
     // Handle agent_action events (questions and answers)
     if (event.type === "agent_action" && event.data) {
       const action = event.data.action as string;
       const result = event.data.result as Record<string, unknown>;
-      
-      // New question (fallback if agent requests it)
-      if (action === "get_question" && result?.question) {
-        const q = result.question as Record<string, unknown>;
-        setCurrentQuestion({
-          questionId: q.questionId as string,
-          questionNumber: q.questionNumber as number,
-          totalQuestions: q.totalQuestions as number,
-          question: q.question as string,
-          answers: q.answers as string[],
-          category: q.category as string,
-          difficulty: q.difficulty as string,
-          timeLimit: (q.timeLimit as number) || 30,
-          questionStartTime: event.timestamp, // Use event timestamp
-        });
-        // Clear answers for new question
-        setAgentAnswers([]);
-      }
+      const payload = event.data.payload as Record<string, unknown>;
       
       // Agent answered
       if (action === "answer" && result?.correct !== undefined) {
-        const payload = event.data.payload as Record<string, unknown>;
         setAgentAnswers((prev) => {
-          // Remove old answer for same question from same agent
           const filtered = prev.filter(
-            (a) => !(a.agentId === event.agentId && currentQuestion?.questionId === payload?.question_id)
+            (a) => a.agentId !== event.agentId
           );
           return [
             ...filtered,
             {
               agentId: event.agentId || "",
-              agentName: "", // Will be filled from match state
+              agentName: "",
               answer: payload?.answer as string || "",
               correct: result.correct as boolean,
               points: result.points as number,
               timestamp: event.timestamp,
             },
-          ].slice(-10); // Keep last 10 answers
+          ].slice(-10);
         });
       }
     }
 
     // Update match state based on event
-    if (event.type === "agent_connected" && event.data.name) {
-      // New agent joined an open match
-      setMatch((prev) => {
-        if (!prev) return null;
-        if (prev.state === "open" && event.agentId !== prev.agentA.id) {
-          return {
-            ...prev,
-            state: "waiting",
-            agentB: {
-              id: event.agentId || "",
-              name: event.data.name as string,
-              score: 0,
-            },
-          };
-        }
-        return prev;
-      });
-    }
-
     if (event.type === "score_update") {
       setMatch((prev) =>
         prev
@@ -279,7 +366,11 @@ export default function SpectatorPage() {
           : null
       );
     }
-  };
+
+    if (event.type === "spectator_count") {
+      setSpectatorCount(event.data.count as number || 0);
+    }
+  }, []);
 
   // Match countdown timer
   useEffect(() => {
@@ -298,9 +389,6 @@ export default function SpectatorPage() {
     return () => clearInterval(interval);
   }, [match]);
 
-  // Track if we've already triggered timeout check for current question
-  const timeoutTriggeredRef = useRef<string | null>(null);
-
   // Question countdown timer (uses server timestamp for persistence across refresh)
   useEffect(() => {
     if (!currentQuestion?.questionStartTime || !currentQuestion?.timeLimit) {
@@ -316,18 +404,17 @@ export default function SpectatorPage() {
       // When timer hits 0, trigger timeout check (only once per question)
       if (remaining === 0 && timeoutTriggeredRef.current !== currentQuestion.questionId) {
         timeoutTriggeredRef.current = currentQuestion.questionId;
-        // Small delay to allow for any in-flight answers
         setTimeout(async () => {
           try {
             await fetch(`/api/matches/${id}/check-timeout`, { method: "POST" });
           } catch (e) {
             console.error("Failed to trigger timeout check:", e);
           }
-        }, 1500); // 1.5s grace period
+        }, 1500);
       }
     };
 
-    updateTimer(); // Initial update
+    updateTimer();
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
@@ -369,10 +456,7 @@ export default function SpectatorPage() {
         const result = event.data.result as Record<string, unknown>;
         const payload = event.data.payload as Record<string, unknown>;
         
-        if (action === "get_question") {
-          // Hide this - it's just polling, not interesting for spectators
-          return null;
-        }
+        if (action === "get_question") return null;
         if (action === "answer") {
           const correct = result?.correct;
           const answer = payload?.answer as string;
@@ -386,10 +470,7 @@ export default function SpectatorPage() {
         }
         return `${agentName} took action`;
       }
-      case "score_update": {
-        // Hide - scores are shown in real-time in the UI
-        return null;
-      }
+      case "score_update": return null;
       case "match_countdown":
         return `⏱️ ${event.data.count}...`;
       case "match_started":
@@ -412,22 +493,16 @@ export default function SpectatorPage() {
   if (!match) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex items-center justify-center text-[#6b7280]">
-        {connected ? "Loading match..." : "Connecting to match..."}
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
+          <p>Loading match...</p>
+        </div>
       </div>
     );
   }
 
   const isWinnerA = match.state === "completed" && match.winnerId === match.agentA.id;
   const isWinnerB = match.state === "completed" && match.winnerId === match.agentB?.id;
-
-  // Get current question answers for display
-  const currentAnswers = agentAnswers.filter(
-    (a) => currentQuestion && events.some(
-      (e) => e.type === "agent_action" && 
-             e.agentId === a.agentId && 
-             (e.data.payload as Record<string, unknown>)?.question_id === currentQuestion.questionId
-    )
-  );
 
   return (
     <main className="min-h-screen bg-[#0f1115] text-white">
@@ -447,6 +522,7 @@ export default function SpectatorPage() {
                 <>
                   <Wifi className="w-4 h-4 text-[#22c55e]" />
                   <span className="text-[#22c55e]">Live</span>
+                  <span className="text-xs text-[#6b7280]">({connectionType})</span>
                 </>
               ) : (
                 <>
@@ -529,7 +605,7 @@ export default function SpectatorPage() {
               <Clock className="w-5 h-5 text-[#ff5c35]" />
               <span className={timeRemaining && timeRemaining < 60 ? "text-[#ef4444]" : "text-white"}>
                 {match.state === "open" && "Waiting for opponent to join..."}
-                {match.state === "waiting" && "Both players joined! Waiting to ready up..."}
+                {match.state === "waiting" && "Both players joined! Starting soon..."}
                 {match.state === "countdown" && "Starting soon..."}
                 {match.state === "active" && (match.format === "trivia_blitz" ? "Match in progress" : (timeRemaining !== null ? formatTime(timeRemaining) : "Active"))}
                 {match.state === "completed" && "Match completed"}
@@ -538,7 +614,7 @@ export default function SpectatorPage() {
             </div>
             <div className="flex items-center gap-2 text-sm text-[#6b7280]">
               <Users className="w-4 h-4" />
-              {spectatorCount} watching
+              {spectatorCount || "?"} watching
             </div>
           </div>
         </div>
@@ -556,7 +632,6 @@ export default function SpectatorPage() {
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                {/* Question Timer */}
                 {questionTimeLeft !== null && (
                   <div className={`flex items-center gap-1 text-lg font-mono font-bold ${
                     questionTimeLeft <= 5 ? "text-[#ef4444] animate-pulse" : 
@@ -582,7 +657,6 @@ export default function SpectatorPage() {
             
             <div className="grid grid-cols-2 gap-3">
               {currentQuestion.answers.map((answer, idx) => {
-                // Check if any agent answered this
                 const answeredBy = agentAnswers.find((a) => a.answer === answer);
                 
                 return (
@@ -634,9 +708,9 @@ export default function SpectatorPage() {
               <div className="divide-y divide-[#262a33] max-h-80 overflow-y-auto">
                 {events.map((event, idx) => {
                   const description = getEventDescription(event);
-                  if (!description) return null; // Skip boring events
+                  if (!description) return null;
                   return (
-                    <div key={idx} className="p-3 flex items-start gap-3 text-sm">
+                    <div key={event.id || idx} className="p-3 flex items-start gap-3 text-sm">
                       <span className="text-xs text-[#6b7280] font-mono shrink-0 mt-0.5">
                         {new Date(event.timestamp).toLocaleTimeString()}
                       </span>

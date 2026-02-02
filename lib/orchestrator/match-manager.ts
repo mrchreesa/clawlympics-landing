@@ -467,26 +467,77 @@ function emitEventLocal(matchId: string, event: MatchEvent): void {
 }
 
 /**
- * Start countdown before match
+ * Start countdown before match (SERVERLESS SAFE)
+ * Stores countdown start time in DB - clients calculate remaining time
+ * Call tickCountdown() periodically (via polling) to advance state
  */
 async function startCountdown(matchId: string): Promise<void> {
   const match = await getMatch(matchId);
   if (!match || match.state !== "waiting") return;
 
-  await updateMatch(matchId, { state: "countdown" });
+  // Store countdown start time in game_state
+  await updateMatch(matchId, { 
+    state: "countdown",
+    game_state: {
+      ...match.gameState,
+      countdown_started_at: Date.now(),
+      countdown_duration: 3000, // 3 seconds
+    }
+  });
 
-  // 3-2-1 countdown - use local emit for speed (no DB write)
-  for (let i = 3; i > 0; i--) {
-    emitEventLocal(matchId, {
-      id: randomUUID(),
-      type: "match_countdown",
-      timestamp: Date.now(),
-      data: { count: i },
-    });
-    await sleep(1000);
+  // Emit countdown event (clients will calculate remaining time)
+  await emitEvent(matchId, {
+    id: randomUUID(),
+    type: "match_countdown",
+    timestamp: Date.now(),
+    data: { 
+      startedAt: Date.now(),
+      duration: 3000,
+      message: "Match starting in 3 seconds!" 
+    },
+  });
+
+  // Note: On serverless, we don't wait - clients trigger start via tickCountdown()
+  // For local dev, we can still use the old behavior
+  if (process.env.VERCEL !== "1") {
+    // Local: wait and start (for backwards compatibility)
+    await sleep(3000);
+    await startMatch(matchId);
+  }
+}
+
+/**
+ * Tick the countdown/match state (call from polling endpoint)
+ * This allows serverless to advance match state without long-running timers
+ */
+export async function tickMatchState(matchId: string): Promise<{ action?: string; match: Match | null }> {
+  const match = await getMatch(matchId);
+  if (!match) return { match: null };
+
+  // Handle countdown -> active transition
+  if (match.state === "countdown") {
+    const countdownStart = (match.gameState?.countdown_started_at as number) || 0;
+    const countdownDuration = (match.gameState?.countdown_duration as number) || 3000;
+    
+    if (Date.now() - countdownStart >= countdownDuration) {
+      await startMatch(matchId);
+      const updated = await getMatch(matchId);
+      return { action: "started", match: updated };
+    }
+    return { action: "countdown", match };
   }
 
-  await startMatch(matchId);
+  // Handle active match timeout
+  if (match.state === "active" && match.startedAt) {
+    const elapsed = Math.floor((Date.now() - match.startedAt) / 1000);
+    if (elapsed >= match.timeLimit) {
+      await endMatch(matchId, "timeout");
+      const updated = await getMatch(matchId);
+      return { action: "timeout", match: updated };
+    }
+  }
+
+  return { match };
 }
 
 /**
@@ -524,17 +575,12 @@ async function startMatch(matchId: string): Promise<void> {
 
   // For trivia matches, push the first question immediately
   if (match.format === "trivia_blitz") {
-    // Small delay to ensure match_started is received first
-    setTimeout(() => pushNextTriviaQuestion(matchId), 500);
+    // Push first question (no setTimeout - do it inline)
+    await pushNextTriviaQuestion(matchId);
   }
 
-  // Set timeout for match end
-  setTimeout(async () => {
-    const currentMatch = await getMatch(matchId);
-    if (currentMatch?.state === "active") {
-      await endMatch(matchId, "timeout");
-    }
-  }, match.timeLimit * 1000);
+  // Note: Match timeout is handled by tickMatchState() called from polling
+  // No setTimeout needed - serverless safe!
 }
 
 /**
@@ -600,16 +646,15 @@ export async function pushNextTriviaQuestion(matchId: string): Promise<void> {
     notifyMatchAgents(freshMatch, challengeEvent, callbacks.agentACallback, callbacks.agentBCallback);
   }
 
-  // Set question timeout
-  setTimeout(async () => {
-    await handleTriviaQuestionTimeout(matchId);
-  }, (question.timeLimit + 1) * 1000); // +1s grace period
+  // Note: Question timeout is checked by checkAndHandleQuestionTimeout() 
+  // called from polling or check-timeout endpoint - no setTimeout needed!
 }
 
 /**
- * Handle trivia question timeout - penalize non-answerers and advance
+ * Check and handle question timeout (call from polling/check-timeout endpoint)
+ * Serverless-safe version - no setTimeout
  */
-async function handleTriviaQuestionTimeout(matchId: string): Promise<void> {
+export async function checkAndHandleQuestionTimeout(matchId: string): Promise<boolean> {
   const { 
     parseTriviaState, 
     wrapTriviaState, 
@@ -618,10 +663,10 @@ async function handleTriviaQuestionTimeout(matchId: string): Promise<void> {
   } = await import("@/lib/games/trivia");
 
   const match = await getMatch(matchId);
-  if (!match || match.state !== "active") return;
+  if (!match || match.state !== "active") return false;
 
   const triviaState = parseTriviaState(match.gameState);
-  if (!triviaState || !isQuestionTimedOut(triviaState)) return;
+  if (!triviaState || !isQuestionTimedOut(triviaState)) return false;
 
   const agentIds = [match.agentA.id, match.agentB.id];
   const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
@@ -643,12 +688,15 @@ async function handleTriviaQuestionTimeout(matchId: string): Promise<void> {
       },
     });
 
-    // Persist and advance to next question
+    // Persist state
     await updateGameState(matchId, wrapTriviaState(newState));
     
-    // Push next question after short delay
-    setTimeout(() => pushNextTriviaQuestion(matchId), 1000);
+    // Push next question
+    await pushNextTriviaQuestion(matchId);
+    return true;
   }
+
+  return false;
 }
 
 /**
