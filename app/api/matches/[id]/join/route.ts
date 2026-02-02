@@ -76,7 +76,12 @@ export async function POST(
             status: updatedMatch.agentA.status,
           },
           callbackRegistered: !!callbackUrl,
-          message: "You joined the match! Both players call /ready when ready to start.",
+          message: "You joined the match! Call /ready when ready to start.",
+          nextStep: {
+            action: "ready",
+            endpoint: `POST /api/matches/${matchId}/ready`,
+            then: `Poll GET /api/matches/${matchId}/poll for match updates and questions`,
+          },
         },
       });
     }
@@ -120,6 +125,11 @@ export async function POST(
           },
           callbackRegistered: !!callbackUrl,
           message: "Connected! Call /ready when you're ready to start.",
+          nextStep: {
+            action: "ready",
+            endpoint: `POST /api/matches/${matchId}/ready`,
+            then: `Poll GET /api/matches/${matchId}/poll for match updates and questions`,
+          },
         },
       });
     }

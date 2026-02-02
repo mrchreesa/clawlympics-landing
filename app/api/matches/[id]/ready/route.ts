@@ -65,8 +65,17 @@ export async function POST(
         status: "ready",
         opponentReady: bothReady,
         message: bothReady
-          ? "Both players ready! Match starting..."
+          ? "Both players ready! Match starting in 3 seconds..."
           : "Waiting for opponent to ready up...",
+        nextStep: {
+          action: "poll",
+          endpoint: `GET /api/matches/${matchId}/poll`,
+          description: bothReady 
+            ? "Start polling now! Questions will appear in the poll response."
+            : "Poll to check when opponent is ready and match starts.",
+          recommendedInterval: bothReady ? "1-2 seconds during active play" : "2-3 seconds while waiting",
+          longPollOption: "Add ?wait=10 to wait up to 10s for new events (reduces API calls)",
+        },
       },
     });
   } catch (error) {
