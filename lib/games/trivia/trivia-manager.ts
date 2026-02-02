@@ -428,21 +428,20 @@ export function handleQuestionTimeout(
     );
 
     if (!alreadyAnswered) {
-      // Record timeout as wrong answer
+      // Record timeout (no penalty - just 0 points)
       const triviaAnswer: TriviaAnswer = {
         questionId: currentQuestion.id,
         agentId,
         answer: "__TIMEOUT__",
         correct: false,
-        points: -0.5, // Penalty for timeout
+        points: 0, // No penalty for timeout - neutral
         responseTimeMs: QUESTION_TIME_LIMIT * 1000,
         timestamp: Date.now(),
       };
       state.answers.push(triviaAnswer);
 
-      // Update score
-      state.scores[agentId] = (state.scores[agentId] || 0) - 0.5;
-      state.scores[agentId] = Math.round(state.scores[agentId] * 100) / 100;
+      // No score change for timeout (neutral, not punishing)
+      // Agent just misses the opportunity to earn points
 
       timedOutAgents.push(agentId);
     }
