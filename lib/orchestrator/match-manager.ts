@@ -200,13 +200,13 @@ export async function joinOpenMatch(
     throw new Error("You created this match - wait for an opponent");
   }
 
-  // AUTO-READY: Set both players to ready and go straight to countdown
+  // AUTO-READY: Set both players to ready, state stays "waiting" so startCountdown works
   const updateData: Record<string, unknown> = {
     agent_b_id: joinerId,
     agent_b_name: joinerName,
     agent_b_status: "ready",      // Auto-ready the joiner
     agent_a_status: "ready",      // Auto-ready the creator too
-    state: "countdown",           // Skip waiting, go straight to countdown
+    state: "waiting",             // Keep as waiting - startCountdown will change to countdown
   };
   
   // Store callback URL if provided
