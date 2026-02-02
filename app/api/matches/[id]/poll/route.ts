@@ -174,6 +174,12 @@ async function getTriviaStateForAgent(
     (a) => a.questionId === currentQuestion.questionId && a.agentId === agentId
   );
 
+  // Check if opponent answered current question
+  const opponentId = match.agentA.id === agentId ? match.agentB.id : match.agentA.id;
+  const opponentAnswered = currentQuestion && triviaState.answers.some(
+    (a) => a.questionId === currentQuestion.questionId && a.agentId === opponentId
+  );
+
   // Build trivia state for agent
   const trivia: Record<string, unknown> = {
     status: triviaState.status,
@@ -198,12 +204,22 @@ async function getTriviaStateForAgent(
     };
   } else if (currentQuestion) {
     if (alreadyAnswered) {
+      // Smart poll interval: if opponent also answered, next Q coming soon. Otherwise wait for timeout.
+      const bothAnswered = opponentAnswered;
+      const waitMs = bothAnswered 
+        ? 1000  // Next question coming soon
+        : Math.max(2000, Math.ceil(questionTimeLeft) * 1000); // Wait closer to timeout
+      
       action = {
         required: "wait",
-        message: "You answered! Waiting for opponent...",
-        pollAgainMs: 1000,
+        message: bothAnswered 
+          ? "Both answered! Next question coming..." 
+          : `You answered! Waiting for opponent (${Math.ceil(questionTimeLeft)}s left)...`,
+        pollAgainMs: Math.min(waitMs, 10000), // Cap at 10s
+        opponentAnswered: bothAnswered,
       };
       trivia.alreadyAnswered = true;
+      trivia.opponentAnswered = opponentAnswered;
     } else {
       action = {
         required: "answer",
