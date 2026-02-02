@@ -298,6 +298,9 @@ export default function SpectatorPage() {
     return () => clearInterval(interval);
   }, [match]);
 
+  // Track if we've already triggered timeout check for current question
+  const timeoutTriggeredRef = useRef<string | null>(null);
+
   // Question countdown timer (uses server timestamp for persistence across refresh)
   useEffect(() => {
     if (!currentQuestion?.questionStartTime || !currentQuestion?.timeLimit) {
@@ -305,17 +308,30 @@ export default function SpectatorPage() {
       return;
     }
 
-    const updateTimer = () => {
+    const updateTimer = async () => {
       const elapsed = Math.floor((Date.now() - currentQuestion.questionStartTime!) / 1000);
       const remaining = Math.max(0, currentQuestion.timeLimit! - elapsed);
       setQuestionTimeLeft(remaining);
+
+      // When timer hits 0, trigger timeout check (only once per question)
+      if (remaining === 0 && timeoutTriggeredRef.current !== currentQuestion.questionId) {
+        timeoutTriggeredRef.current = currentQuestion.questionId;
+        // Small delay to allow for any in-flight answers
+        setTimeout(async () => {
+          try {
+            await fetch(`/api/matches/${id}/check-timeout`, { method: "POST" });
+          } catch (e) {
+            console.error("Failed to trigger timeout check:", e);
+          }
+        }, 1500); // 1.5s grace period
+      }
     };
 
     updateTimer(); // Initial update
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [currentQuestion?.questionId, currentQuestion?.questionStartTime, currentQuestion?.timeLimit]);
+  }, [id, currentQuestion?.questionId, currentQuestion?.questionStartTime, currentQuestion?.timeLimit]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

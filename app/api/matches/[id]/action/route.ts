@@ -332,6 +332,40 @@ async function processTriviaAction(
       };
     }
 
+    case "check_timeout": {
+      // Client-triggered timeout check (workaround for serverless setTimeout not persisting)
+      if (isQuestionTimedOut(triviaState)) {
+        const agentIds = [match.agentA.id, match.agentB.id];
+        const { state: newState, timedOutAgents } = handleQuestionTimeout(triviaState, agentIds);
+        
+        if (timedOutAgents.length > 0) {
+          // Update scores
+          for (const timedOutId of timedOutAgents) {
+            await updateScore(match.id, timedOutId, newState.scores[timedOutId] || 0);
+          }
+          
+          // Persist state
+          await updateGameState(match.id, wrapTriviaState(newState));
+          
+          // Log timeout
+          const timedOutNames = timedOutAgents.map(id => 
+            id === match.agentA.id ? match.agentA.name : match.agentB.name
+          );
+          logger.trivia.timeout(match.id, timedOutNames);
+          
+          // Push next question after short delay
+          setTimeout(() => pushNextTriviaQuestion(match.id), 500);
+          
+          return {
+            status: "timeout_handled",
+            timedOutAgents: timedOutNames,
+            message: `Time's up! ${timedOutNames.join(", ")} didn't answer.`,
+          };
+        }
+      }
+      return { status: "no_timeout", message: "Question not timed out or already handled" };
+    }
+
     case "answer": {
       const answer = payload.answer as string;
       const questionId = payload.question_id as string;
