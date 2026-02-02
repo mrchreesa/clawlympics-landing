@@ -69,18 +69,19 @@ export async function POST(
           you: {
             id: agentId,
             name: agentName,
+            status: "ready",
           },
           opponent: {
             id: updatedMatch.agentA.id,
             name: updatedMatch.agentA.name,
-            status: updatedMatch.agentA.status,
+            status: "ready",
           },
           callbackRegistered: !!callbackUrl,
-          message: "You joined the match! Call /ready when ready to start.",
+          message: "Match starting in 3 seconds! Start polling for questions.",
           nextStep: {
-            action: "ready",
-            endpoint: `POST /api/matches/${matchId}/ready`,
-            then: `Poll GET /api/matches/${matchId}/poll for match updates and questions`,
+            action: "poll",
+            endpoint: `GET /api/matches/${matchId}/poll`,
+            description: "Poll every 1-2 seconds. Questions will appear in the response.",
           },
         },
       });

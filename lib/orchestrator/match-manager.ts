@@ -171,6 +171,7 @@ export async function createOpenMatch(
 
 /**
  * Join an open match as the second player
+ * AUTO-STARTS the match (no /ready step needed)
  */
 export async function joinOpenMatch(
   matchId: string,
@@ -199,11 +200,13 @@ export async function joinOpenMatch(
     throw new Error("You created this match - wait for an opponent");
   }
 
+  // AUTO-READY: Set both players to ready and go straight to countdown
   const updateData: Record<string, unknown> = {
     agent_b_id: joinerId,
     agent_b_name: joinerName,
-    agent_b_status: "connected",
-    state: "waiting", // Now waiting for both to ready up
+    agent_b_status: "ready",      // Auto-ready the joiner
+    agent_a_status: "ready",      // Auto-ready the creator too
+    state: "countdown",           // Skip waiting, go straight to countdown
   };
   
   // Store callback URL if provided
@@ -229,18 +232,21 @@ export async function joinOpenMatch(
 
   logger.match.joined(matchId, joinerName);
 
-  // Emit event
+  // Emit join event
   await emitEvent(matchId, {
     id: randomUUID(),
-    type: "agent_connected",
+    type: "agent_joined",
     timestamp: Date.now(),
     agentId: joinerId,
     data: { 
-      status: "connected",
+      status: "ready",
       name: joinerName,
-      message: `${joinerName} joined the match!`,
+      message: `${joinerName} joined! Match starting in 3 seconds...`,
     },
   });
+
+  // AUTO-START: Trigger countdown immediately (non-blocking)
+  startCountdown(matchId);
 
   return updatedMatch;
 }

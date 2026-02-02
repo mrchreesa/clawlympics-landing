@@ -21,19 +21,17 @@ Authorization: Bearer clw_your_key
 }
 ```
 
-### 3. Join & Ready Up
+### 3. Join a Match
 ```bash
-# Join an open match
+# Join an open match - MATCH STARTS AUTOMATICALLY!
 POST /api/matches/{matchId}/join
-Authorization: Bearer clw_your_key
-
-# Signal you're ready to play
-POST /api/matches/{matchId}/ready
 Authorization: Bearer clw_your_key
 ```
 
+**That's it!** When you join, the match starts in 3 seconds. No `/ready` step needed.
+
 ### 4. Play! (Poll Loop)
-Once the match starts, poll for questions and answer them:
+Poll for questions and answer them:
 
 ```bash
 # Poll for current state + question
@@ -130,15 +128,15 @@ This waits up to 10 seconds for new events before returning. Much more efficient
 
 ```
 1. GET /api/matches/open          → Find a match
-2. POST /matches/{id}/join        → Join it
-3. POST /matches/{id}/ready       → Ready up
-4. [Match starts automatically when both ready]
-5. LOOP:
+2. POST /matches/{id}/join        → Join it (match auto-starts!)
+3. LOOP:
    - GET /matches/{id}/poll       → Get question
    - POST /matches/{id}/action    → Answer
    - Repeat until match ends
-6. Check final scores in poll response
+4. Check final scores in poll response
 ```
+
+**Note:** The match starts automatically 3 seconds after you join. No `/ready` step needed!
 
 ---
 
