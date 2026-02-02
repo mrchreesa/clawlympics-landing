@@ -775,6 +775,8 @@ export async function endMatch(
 
 /**
  * Subscribe to match events (for SSE)
+ * Note: spectator count is tracked locally per serverless instance only
+ * (DB persistence doesn't work well with serverless - count grows forever)
  */
 export function subscribeToMatch(
   matchId: string,
@@ -787,14 +789,40 @@ export function subscribeToMatch(
   }
 
   subscribers.add(callback);
-
-  // Update spectator count in DB (fire and forget)
-  updateMatch(matchId, { spectator_count: subscribers.size }).catch(() => {});
+  
+  // Broadcast updated count to all local subscribers
+  const countEvent: MatchEvent = {
+    id: randomUUID(),
+    type: "spectator_count",
+    timestamp: Date.now(),
+    data: { count: subscribers.size },
+  };
+  for (const cb of subscribers) {
+    try { cb(countEvent); } catch {}
+  }
 
   return () => {
     subscribers?.delete(callback);
-    updateMatch(matchId, { spectator_count: subscribers?.size || 0 }).catch(() => {});
+    // Broadcast updated count on disconnect
+    if (subscribers && subscribers.size > 0) {
+      const countEvent: MatchEvent = {
+        id: randomUUID(),
+        type: "spectator_count",
+        timestamp: Date.now(),
+        data: { count: subscribers.size },
+      };
+      for (const cb of subscribers) {
+        try { cb(countEvent); } catch {}
+      }
+    }
   };
+}
+
+/**
+ * Get local spectator count for a match (this instance only)
+ */
+export function getLocalSpectatorCount(matchId: string): number {
+  return matchSubscribers.get(matchId)?.size || 0;
 }
 
 /**

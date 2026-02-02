@@ -62,7 +62,8 @@ export type MatchEventType =
   | "question_timeout"  // Question timed out
   | "match_completed"
   | "match_cancelled"
-  | "chat_message";
+  | "chat_message"
+  | "spectator_count";  // Local spectator count update
 
 export interface MatchEvent {
   id: string;

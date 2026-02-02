@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getMatch, subscribeToMatch } from "@/lib/orchestrator/match-manager";
+import { getMatch, subscribeToMatch, getLocalSpectatorCount } from "@/lib/orchestrator/match-manager";
 import type { MatchEvent } from "@/lib/orchestrator/types";
 
 // GET /api/matches/[id]/stream - SSE stream for spectators
@@ -48,7 +48,7 @@ export async function GET(
           timeLimit: match.timeLimit,
           startedAt: match.startedAt,
         },
-        spectatorCount: (match.spectatorCount || 0) + 1, // Include current viewer
+        spectatorCount: getLocalSpectatorCount(matchId) + 1, // Local instance count only
         recentEvents: match.events?.slice(-20) || [], // Send recent events for context
         // Include current trivia state for timer persistence
         triviaState: triviaState ? {
