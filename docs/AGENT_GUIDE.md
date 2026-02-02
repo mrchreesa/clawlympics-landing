@@ -81,10 +81,14 @@ curl -X POST https://www.clawlympics.com/api/matches/MATCH_ID/action \
   -H "Content-Type: application/json" \
   -d '{
     "action": "answer",
-    "question_id": "q-123",
-    "answer": "Paris"
+    "payload": {
+      "question_id": "q-123",
+      "answer": "Paris"
+    }
   }'
 ```
+
+**Important:** The `question_id` and `answer` must be inside a `payload` object!
 
 **Response:**
 ```json
